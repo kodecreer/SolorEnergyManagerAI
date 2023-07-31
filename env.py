@@ -1,11 +1,37 @@
 import gymnasium as gym
-from gym import spaces
+from gymnasium import spaces
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 import random
 import torch
 import torch.nn as nn
+from collections import defaultdict
+
+import matplotlib.pyplot as plt
+import torch
+from tensordict.nn import TensorDictModule
+from tensordict.nn.distributions import NormalParamExtractor
+from torch import nn
+
+import torchrl
+from torchrl.collectors import SyncDataCollector
+from torchrl.data.replay_buffers import ReplayBuffer
+from torchrl.data.replay_buffers.samplers import SamplerWithoutReplacement
+from torchrl.data.replay_buffers.storages import LazyTensorStorage
+from torchrl.envs import (
+    Compose,
+    DoubleToFloat,
+    ObservationNorm,
+    StepCounter,
+    TransformedEnv,
+)
+from torchrl.envs.libs.gym import GymEnv
+from torchrl.envs.utils import check_env_specs, ExplorationType, set_exploration_type
+from torchrl.modules import ProbabilisticActor, TanhNormal, ValueOperator
+from torchrl.objectives import ClipPPOLoss
+from torchrl.objectives.value import GAE
+from tqdm import tqdm
 
 #TASK List Sprint 1 ##########
 #TODO Create a dummy model   #
@@ -16,6 +42,23 @@ import torch.nn as nn
 #TODO Incorporate into TorchRL for parrallel envs
 #TODO Make graphing more efficient. Slows down for some reason after a while for no reason
 ##############################
+device = "cpu" if not torch.has_cuda else "cuda:0"
+num_cells = 256  # number of cells in each layer i.e. output dim.
+lr = 3e-4
+max_grad_norm = 1.0
+frame_skip = 1
+frames_per_batch = 1000 // frame_skip
+# For a complete training, bring the number of frames up to 1M
+total_frames = 10_000 // frame_skip
+sub_batch_size = 64  # cardinality of the sub-samples gathered from the current data in the inner loop
+num_epochs = 10  # optimisation steps per batch of data collected
+clip_epsilon = (
+    0.2  # clip value for PPO loss: see the equation in the intro for more context.
+)
+gamma = 0.99
+lmbda = 0.95
+entropy_eps = 1e-4
+
 
 class SolarAI(nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
@@ -154,7 +197,91 @@ class SolarEnv(gym.Env):
 if __name__ == '__main__':
     df = pd.read_excel('dummy_data.xlsx')
     print(df.head())
-    env = SolarEnv(df, 0)
+    env = GymEnv( SolarEnv(df, 0), device=device)
+    env = TransformedEnv(
+        env,
+        Compose(
+            # normalize observations
+            ObservationNorm(in_keys=["observation"]),
+            DoubleToFloat(
+                in_keys=["observation"],
+            ),
+            StepCounter(),
+        ),
+    )
+    print(check_env_specs(env))
+    actor_net = nn.Sequential(
+    nn.LazyLinear(num_cells, device=device),
+    nn.Tanh(),
+    nn.LazyLinear(num_cells, device=device),
+    nn.Tanh(),
+    nn.LazyLinear(num_cells, device=device),
+    nn.Tanh(),
+    nn.LazyLinear(2 * env.action_spec.shape[-1], device=device),
+    NormalParamExtractor(),
+    )
+    policy_module = TensorDictModule(
+    actor_net, in_keys=["observation"], out_keys=["loc", "scale"]
+    )
+    policy_module = ProbabilisticActor(
+    module=policy_module,
+    spec=env.action_spec,
+    in_keys=["loc", "scale"],
+    distribution_class=TanhNormal,
+    distribution_kwargs={
+        "min": env.action_spec.space.minimum,
+        "max": env.action_spec.space.maximum,
+    },
+    return_log_prob=True,
+    # we'll need the log-prob for the numerator of the importance weights
+    )
+    value_net = nn.Sequential(
+    nn.LazyLinear(num_cells, device=device),
+    nn.Tanh(),
+    nn.LazyLinear(num_cells, device=device),
+    nn.Tanh(),
+    nn.LazyLinear(num_cells, device=device),
+    nn.Tanh(),
+    nn.LazyLinear(1, device=device),
+    )
+
+    value_module = ValueOperator(
+        module=value_net,
+        in_keys=["observation"],
+    )
+    collector = SyncDataCollector(
+    env,
+    policy_module,
+    frames_per_batch=frames_per_batch,
+    total_frames=total_frames,
+    split_trajs=False,
+    device=device,
+    )
+    replay_buffer = ReplayBuffer(
+    storage=LazyTensorStorage(frames_per_batch),
+    sampler=SamplerWithoutReplacement(),
+    )
+    advantage_module = GAE(
+    gamma=gamma, lmbda=lmbda, value_network=value_module, average_gae=True
+)
+
+    loss_module = ClipPPOLoss(
+    actor=policy_module,
+    critic=value_module,
+    clip_epsilon=clip_epsilon,
+    entropy_bonus=bool(entropy_eps),
+    entropy_coef=entropy_eps,
+    # these keys match by default but we set this for completeness
+    value_target_key=advantage_module.value_target_key,
+    critic_coef=1.0,
+    gamma=0.99,
+    loss_critic_type="smooth_l1",
+    )
+
+    optim = torch.optim.Adam(loss_module.parameters(), lr)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optim, total_frames // frames_per_batch, 0.0
+    )
     # Reset the environment to its initial state and receive the initial observation
     observation = env.reset()
 

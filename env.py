@@ -10,6 +10,7 @@ from collections import defaultdict
 
 import matplotlib.pyplot as plt
 import torch
+from tensordict import TensorDict
 from tensordict.nn import TensorDictModule
 from tensordict.nn.distributions import NormalParamExtractor
 from torch import nn
@@ -76,9 +77,11 @@ class SolarAI(nn.Module):
 class SolarEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
-    def __init__(self, data, initial_balance=10000):
+    def __init__(self):
         super(SolarEnv, self).__init__()
-
+        data = pd.read_excel('dummy_data.xlsx')
+        # print(df.head())
+        self.seed = torch.random.initial_seed()
         self.fig, self.ax = plt.subplots(2,2)
         self.action_line,  = self.ax[0][0].plot([0], [0])
         self.ax[0][0].set_xlabel('Timestep')
@@ -104,7 +107,7 @@ class SolarEnv(gym.Env):
         # Define the action and observation spaces
         self.action_space = spaces.Discrete(3)  # Example: Sell, Hold, Buy
         self.observation_space = spaces.Box(
-            low=0, high=np.inf, shape=(len(self.df),), dtype=np.float32
+            low=0, high=np.inf, shape=(1,12), dtype=np.float32
         )
 
         self.current_step = 0
@@ -142,7 +145,7 @@ class SolarEnv(gym.Env):
         reward = self.get_price(vimp, imp, WATTAGE_RATE )
         self.rewards.append(reward)
 
-        if action == 1:
+        if action == 1 and len(self.actions) > 0:
             #Sell
             new_balance = self.actions[-1] + reward
             self.actions.append(new_balance)
@@ -152,21 +155,26 @@ class SolarEnv(gym.Env):
             self.actions.append(value)
 
         #next observation
-        return (), reward, self.current_step >= len(self.df)-1, 0
+        return self._next_observation(), reward, self.current_step >= len(self.df)-1, 0
 
-    def reset(self):
+    def reset(self, seed=0):
         # Reset the environment to the initial state and return the observation
         self.current_step = 0
         self.actions = []
         self.vimp = []
+        self.seed = seed
       
         return self._next_observation()
 
     def _next_observation(self):
-        # Generate the observation for the current step
-        # return np.array([self.data[self.current_step]])
-        first_value = self.df.iloc[0]
-        return np.array(first_value)
+        obs_data = self.df.iloc[self.current_step]
+        observation = TensorDict({
+            'observation' : torch.tensor(obs_data.values).unsqueeze(0)
+            },
+            batch_size=1  # Set the batch size to 1 for a single observation
+        )
+        return observation
+
 
     def render(self, mode='human'):
         log_val = 100
@@ -195,9 +203,9 @@ class SolarEnv(gym.Env):
 
 
 if __name__ == '__main__':
-    df = pd.read_excel('dummy_data.xlsx')
-    print(df.head())
-    env = GymEnv( SolarEnv(df, 0), device=device)
+    
+    gym.register(id='SolarEnv-v0', entry_point='env:SolarEnv')
+    env = GymEnv('SolarEnv-v0', device=device, frame_skip=frame_skip)
     env = TransformedEnv(
         env,
         Compose(
@@ -209,7 +217,15 @@ if __name__ == '__main__':
             StepCounter(),
         ),
     )
-    print(check_env_specs(env))
+    env.transform[0].init_stats(num_iter=1000, reduce_dim=0, cat_dim=0)
+    print("normalization constant shape:", env.transform[0].loc.shape)
+    print("observation_spec:", env.observation_spec)
+    print("reward_spec:", env.reward_spec)
+    print("done_spec:", env.done_spec)
+    print("action_spec:", env.action_spec)
+    # print("state_spec:", env.state_spec)
+    check_env_specs(env)
+
     actor_net = nn.Sequential(
     nn.LazyLinear(num_cells, device=device),
     nn.Tanh(),
@@ -228,10 +244,10 @@ if __name__ == '__main__':
     spec=env.action_spec,
     in_keys=["loc", "scale"],
     distribution_class=TanhNormal,
-    distribution_kwargs={
-        "min": env.action_spec.space.minimum,
-        "max": env.action_spec.space.maximum,
-    },
+    # distribution_kwargs={
+    #     "min": env.action_spec.,
+    #     "max": env.action_spec.space.maximum,
+    # },
     return_log_prob=True,
     # we'll need the log-prob for the numerator of the importance weights
     )
@@ -249,6 +265,8 @@ if __name__ == '__main__':
         module=value_net,
         in_keys=["observation"],
     )
+    print("Running policy:", policy_module(env.reset()))
+    print("Running value:", value_module(env.reset()))
     collector = SyncDataCollector(
     env,
     policy_module,

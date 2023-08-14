@@ -19,8 +19,9 @@ if __name__ == '__main__':
     #TODO get this woking iwth gym.make
     
     # env = gym.vector.make('SolarEnv-v0', 1)
-    #Create version of Solar Env that's compatible with the spec here
+    #TODO Create version of Solar Env that's compatible with the spec here
     #https://gymnasium.farama.org/api/experimental/vector/
+
     env = gym.vector.make('CartPole-v1', num_envs=2)
 
  

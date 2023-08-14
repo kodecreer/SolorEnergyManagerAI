@@ -204,11 +204,112 @@ class SolarEnv(gym.Env):
 
 if __name__ == '__main__':
     
-    gym.register(id='SolarEnv-v0', entry_point='env:SolarEnv')
-    env = SolarEnv()
+    # gym.register(id='SolarEnv-v0', entry_point='env:SolarEnv')
+    # env = SolarEnv()
+    base_env = GymEnv("InvertedDoublePendulum-v4", device=device, frame_skip=frame_skip)
+    env = TransformedEnv(
+    base_env,
+    Compose(
+        # normalize observations
+        ObservationNorm(in_keys=["observation"]),
+        DoubleToFloat(
+            in_keys=["observation"],
+        ),
+        StepCounter(),
+    ),
+    )
+    env.transform[0].init_stats(num_iter=1000, reduce_dim=0, cat_dim=0)
+    print("normalization constant shape:", env.transform[0].loc.shape)
+
+    print("observation_spec:", env.observation_spec)
+    print("reward_spec:", env.reward_spec)
+    print("done_spec:", env.done_spec)
+    print("action_spec:", env.action_spec)
+    print("state_spec:", env.state_spec)
+    print(check_env_specs(env))
+
+    # value_module = SolarAI(12, 256, 3)
+    # policy_module = SolarAI(12, 256, 3)
+    rollout = env.rollout(3)
+    print("rollout of three steps:", rollout)
+    print("Shape of the rollout TensorDict:", rollout.batch_size)
+    actor_net = nn.Sequential(
+    nn.LazyLinear(num_cells, device=device),
+    nn.Tanh(),
+    nn.LazyLinear(num_cells, device=device),
+    nn.Tanh(),
+    nn.LazyLinear(num_cells, device=device),
+    nn.Tanh(),
+    nn.LazyLinear(2 * env.action_spec.shape[-1], device=device),
+    NormalParamExtractor(),
+    )
+    advantage_module = GAE(
+    gamma=gamma, lmbda=lmbda, value_network=value_module, average_gae=True
+    )
+    policy_module = ProbabilisticActor(
+    module=policy_module,
+    spec=env.action_spec,
+    in_keys=["loc", "scale"],
+    distribution_class=TanhNormal,
+    distribution_kwargs={
+        "min": env.action_spec.space.minimum,
+        "max": env.action_spec.space.maximum,
+    },
+    return_log_prob=True,
+    # we'll need the log-prob for the numerator of the importance weights
+    )
+    policy_module = TensorDictModule(
+    actor_net, in_keys=["observation"], out_keys=["loc", "scale"]
+    )
+    policy_module = ProbabilisticActor(
+    module=policy_module,
+    spec=env.action_spec,
+    in_keys=["loc", "scale"],
+    distribution_class=TanhNormal,
+    distribution_kwargs={
+        "min": env.action_spec.space.minimum,
+        "max": env.action_spec.space.maximum,
+    },
+    return_log_prob=True,
+    # we'll need the log-prob for the numerator of the importance weights
+    )
+    value_net = nn.Sequential(
+    nn.LazyLinear(num_cells, device=device),
+    nn.Tanh(),
+    nn.LazyLinear(num_cells, device=device),
+    nn.Tanh(),
+    nn.LazyLinear(num_cells, device=device),
+    nn.Tanh(),
+    nn.LazyLinear(1, device=device),
+    )
+
+    value_module = ValueOperator(
+        module=value_net,
+        in_keys=["observation"],
+    )
     
-    agent = SolarAI(12, 256, 3)
-    optim = torch.optim.Adam(agent.parameters(), lr)
+    collector = SyncDataCollector(
+    env,
+    policy_module,
+    frames_per_batch=frames_per_batch,
+    total_frames=total_frames,
+    split_trajs=False,
+    device=device,
+    )
+    loss_module = ClipPPOLoss(
+    actor=policy_module,
+    critic=value_module,
+    clip_epsilon=clip_epsilon,
+    entropy_bonus=bool(entropy_eps),
+    entropy_coef=entropy_eps,
+    # these keys match by default but we set this for completeness
+    value_target_key=advantage_module.value_target_key,
+    critic_coef=1.0,
+    gamma=0.99,
+    loss_critic_type="smooth_l1",
+    )
+
+    optim = torch.optim.Adam(loss_module.parameters(), lr)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optim, total_frames // frames_per_batch, 0.0
     )
@@ -220,16 +321,38 @@ if __name__ == '__main__':
     log_interval = 90
     interval = 0
 
+    replay_buffer = ReplayBuffer(
+    storage=LazyTensorStorage(frames_per_batch),
+    sampler=SamplerWithoutReplacement(),
+    )
     for episode in range(num_episodes):
         observation = env.reset()
         done = False
         while not done:
             # Replace 'your_action' with the action you want to take in the environment (e.g., 0, 1, 2, ...)
-            action =  env.action_space.sample()
+            # action =  env.action_space.sample()
+            action = advantage_module(observation)
+            replay_buffer.extend(action.cpu())
+            for _ in range(frames_per_batch // sub_batch_size):
+                subdata = replay_buffer.sample(sub_batch_size)
+                loss_vals = loss_module(subdata.to(device))
+                loss_value = (
+                    loss_vals["loss_objective"]
+                    + loss_vals["loss_critic"]
+                    + loss_vals["loss_entropy"]
+                )
 
+            # Optimization: backward, grad clipping and optim step
+            loss_value.backward()
+            # this is not strictly mandatory but it's good practice to keep
+            # your gradient norm bounded
+            torch.nn.utils.clip_grad_norm_(loss_module.parameters(), max_grad_norm)
+            optim.step()
+            optim.zero_grad()
             # Perform the chosen action in the environment
             next_observation, reward, done, _ = env.step(action)
             interval += 1
+            
             if interval >= log_interval:
                 # You can render the environment at each step if you want to visualize the progress
                 env.render()

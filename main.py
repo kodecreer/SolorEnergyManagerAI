@@ -18,7 +18,10 @@ if __name__ == '__main__':
     #TODO Use farama Vector env instead
     #TODO get this woking iwth gym.make
     
-    env = gym.make('SolarEnv-v0')
+    # env = gym.vector.make('SolarEnv-v0', 1)
+    #Create version of Solar Env that's compatible with the spec here
+    #https://gymnasium.farama.org/api/experimental/vector/
+    env = gym.vector.make('CartPole-v1', num_envs=2)
 
  
     # Reset the environment to its initial state and receive the initial observation
@@ -31,12 +34,12 @@ if __name__ == '__main__':
 
     for episode in tqdm(range(num_episodes)):
         observation = env.reset()
-        done = False
-        while not done:
+        done = [False, False]
+        while  not(done[0] and done[1]):
             # Replace 'your_action' with the action you want to take in the environment (e.g., 0, 1, 2, ...)
-            action =  env.action_space.sample()
+            actions =  env.action_space.sample()
     
-            next_observation, reward, done,truncated,  _ = env.step(action)
+            next_observation, reward, done,truncated,  _ = env.step(actions)
 
 
             if interval >= log_interval:
@@ -46,8 +49,9 @@ if __name__ == '__main__':
 
             # Update the current observation with the next observation
             observation = next_observation
-            env.current_step += 1
+            # env.current_step += 1
             interval += 1
+            
         
     # Close the environment when done
     env.close()

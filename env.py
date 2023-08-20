@@ -117,7 +117,7 @@ class SolarEnv(gym.Env):
         self.actions = []
         self.vimp = []
         self.imp = []
-        observation = (np.array(range(12), dtype=np.float32))
+        observation = (self.df.iloc[0])
         return observation, {}
 
     def render(self, mode='human'):

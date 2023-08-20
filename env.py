@@ -12,7 +12,8 @@ import torch
 
 from torch import nn
 from tqdm import tqdm
-
+#TODO incorporate price fluctuations. For now we can just incorporate random numbers
+#which is realitic sometimes if you do options #TODO Remove this joke later before next meeting
 
 
 class SolarEnv(gym.Env):
@@ -43,42 +44,72 @@ class SolarEnv(gym.Env):
         self.observation_space = spaces.Box(
             low=0, high=np.inf, shape=(12,), dtype=np.float32
         )
+        #Key for the AI network
+        self.balance = 0
+        self.wattage_balance = 0
+        self.power_daily = 866
+        self.power_sub = self.power_daily / 48 #Kilowatts to substract from wattage_balance per time step
 
         self.current_step = 0
+        self.hour = 1
         self.vimp = []
         self.imp = []
         self.actions = []
         self.rewards = []
 
-    def calc_reward(self, balance):
-        return balance
+    def calc_reward(self):
+        return self.balance
         
-    def get_price(self, vmp, imp, wattage_rate):
+    def get_wattage(self, vmp, imp):
         pmax = vmp * imp
-        reward = wattage_rate * pmax
-        return reward
+        return pmax
 
     def step(self, action):
         vimp = self.df['Vmp'][self.current_step]
         imp = self.df['Imp'][self.current_step]
+  
         self.vimp.append(vimp)
         self.imp.append(imp)
-        WATTAGE_RATE = 0.5
+        WATTAGE_RATE = random.random()
 
-        reward = self.get_price(vimp, imp, WATTAGE_RATE)
-        self.rewards.append(reward)
+        kilo_watts = self.get_wattage(vimp, imp)#Lets assum Kilo Watts for now
 
+        #Hold the power
         if action == 1 and len(self.actions) > 0:
-            new_balance = self.actions[-1] + reward
-            self.actions.append(new_balance)
+            #Add it to the balance
+            self.wattage_balance += kilo_watts
+            #subtract the amount of energy consumed
+            self.wattage_balance -= self.power_sub
+            if self.wattage_balance < 0:
+                #Subtract from the balance
+                self.balance -= abs(self.wattage_balance * WATTAGE_RATE)
+            self.actions.append(action)
+        #Sell it back to the grid
+        #First subtract the wattage consumed from the balane
+        #Then add it back toe the balance and sell the excess
+        #You get no money for selling money you don't have
         else:
-            value = self.actions[-1] if len(self.actions) > 0 else 0
-            self.actions.append(value)
-
+            self.wattage_balance -= self.power_sub
+            self.wattage_balance += kilo_watts
+            
+            if self.wattage_balance > 0:
+                self.balance += self.wattage_balance * WATTAGE_RATE
+                #clear the wattages
+                self.wattage_balance = 0
+            else:
+                #Subtract from the balance
+                self.balance -= abs(self.wattage_balance * WATTAGE_RATE)
+                self.wattage_balance = 0
+            self.actions.append(action)
+        self.rewards.append(self.balance)
         self.current_step += 1
         done = self.current_step >= len(self.df) - 1
         observation = np.array(range(12), dtype=np.float32)
         truncated = False
+        #for now we will naively set the reward to the balance...
+        #Since that is the key statistic we want to maximize.
+        #May need to consider something else later
+        reward = self.calc_reward()
         return observation,reward,  done, truncated, {}
 
     def reset(self, seed=None, options=None):

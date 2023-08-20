@@ -104,7 +104,7 @@ class SolarEnv(gym.Env):
         self.rewards.append(self.balance)
         self.current_step += 1
         done = self.current_step >= len(self.df) - 1
-        observation = np.array(range(12), dtype=np.float32)
+        observation = self.df.iloc[self.current_step]
         truncated = False
         #for now we will naively set the reward to the balance...
         #Since that is the key statistic we want to maximize.

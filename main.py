@@ -40,7 +40,7 @@ if __name__ == '__main__':
         observation = env.reset()
         done = False
 
-        while  not done:
+        while not done:
             # Replace 'your_action' with the action you want to take in the environment (e.g., 0, 1, 2, ...)
             actions =  env.action_space.sample()
     

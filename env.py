@@ -23,7 +23,7 @@ class HyperParameterConfig():
     learning_rate = 0.1
     #For GAE
     gamma = 0.99
-    lambdas = 0.95
+    gae_lambda = 0.95
 
 # Implement the memory buffer
 class MemoryBuffer:
@@ -62,7 +62,7 @@ def clipped_ppo(actor: torch.nn.Module, critic: torch.nn.Module, buffer: MemoryB
             for k in range(t, len(reward_arr)-1):
                 a_t += discount*(reward_arr[k] + config.gamma*values[k+1]*\
                         (1-int(dones_arr[k])) - values[k])
-                discount *= config.gamma*config.gae_lambda
+                discount *= config.gamma* config.gae_lambda
             advantage[t] = a_t
         advantage = torch.tensor(advantage)
 

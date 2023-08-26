@@ -12,9 +12,91 @@ import torch
 
 from torch import nn
 from tqdm import tqdm
-#TODO incorporate price fluctuations. For now we can just incorporate random numbers
-#which is realitic sometimes if you do options #TODO Remove this joke later before next meeting
 
+class HyperParameterConfig():
+    num_epochs = 100
+    num_steps = 2048
+    batch_size = 64
+    clip_epsilon = 0.2
+    value_coeff = 0.5
+    entropy_coeff = 0.01
+    learning_rate = 0.1
+    #For GAE
+    gamma = 0.99
+    lambdas = 0.95
+
+# Implement the memory buffer
+class MemoryBuffer:
+    def __init__(self, capacity, num_columns):
+        self.capacity = capacity
+        self.num_columns = num_columns
+        self.buffer = np.zeros((capacity, num_columns))
+        self.rewards = np.zeros(1)
+        self.dones = np.zeros(1) #This may also be reffered to as a mask
+        self.acitons = np.zeros(1)
+        self.position = 0
+
+    def push(self, data):
+        assert data.shape == (self.num_columns,), "Data shape must match the number of columns."
+        self.buffer[self.position] = data
+        self.position = (self.position + 1) % self.capacity
+
+    def sample(self, batch_size):
+        indices = np.random.choice(self.capacity, batch_size, replace=False)
+        return self.buffer[indices]
+#TODO Impliment PPO Algorithm in Pytorch. Vectorize if possible without referencing my Pokemon project!!!
+def clipped_ppo(actor: torch.nn.Module, critic: torch.nn.Module, buffer: MemoryBuffer, optimizer_actor, optimizer_critic, config: HyperParameterConfig = None):
+    #Run PPO Algorithm
+    for _ in range(config.num_epochs):
+        # Calculate General Advantage Estimate
+        state_arr, action_arr, old_prob_arr, vals_arr,\
+        reward_arr, dones_arr, batches = \
+                buffer.sample()
+
+        values = vals_arr
+        advantage = np.zeros(len(reward_arr), dtype=np.float32)
+
+        for t in range(len(reward_arr)-1):
+            discount = 1
+            a_t = 0
+            for k in range(t, len(reward_arr)-1):
+                a_t += discount*(reward_arr[k] + config.gamma*values[k+1]*\
+                        (1-int(dones_arr[k])) - values[k])
+                discount *= config.gamma*config.gae_lambda
+            advantage[t] = a_t
+        advantage = torch.tensor(advantage)
+
+        for batch in batches:
+            states = torch.tensor(state_arr[batch], dtype=torch.float)
+            old_probs = torch.tensor(old_prob_arr[batch])
+            actions = torch.tensor(action_arr[batch])
+            
+            distributions: torch.distributions.Categorical = actor(states)
+            critic_value = critic(states)
+            new_probs = distributions.log_prob(actions)
+            prob_ratio = new_probs.exp() / old_probs.exp()
+            weighted_probs = prob_ratio * advantage[batch]
+
+            weighted_clip_probs = torch.clamp(prob_ratio, 1 - config.clip_epsilon, 1 + config.clip_epsilon) * advantage[batch]
+            actor_loss = -torch.min(weighted_probs, weighted_clip_probs) #negative so it can get added together
+            gains = advantage[batch] + values[batch]
+            critic_loss = (gains - critic_value)**2
+            critic_loss = critic_loss.mean()
+
+            total_loss = critic_loss - actor_loss *0.5 #Add a weight 
+            optimizer_actor.zero_grad()
+            optimizer_critic.zero_grad()
+            total_loss.backward()
+            optimizer_actor.step()
+            optimizer_critic.step()
+        buffer.clear() #TODO define a clear method from the buffer.
+
+
+
+
+
+#TODO Create simple MLP or RNN to do actions
+#TODO incorporate price fluctuations. 
 
 class SolarEnv(gym.Env):
     metadata = {'render.modes': ['human', 'rgb_array'], 'render_modes': ['human', 'rgb_array'], 'render_fps': 30}  # Add 'render_fps'

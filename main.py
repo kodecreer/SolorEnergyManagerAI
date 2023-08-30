@@ -13,7 +13,8 @@ import torch
 from torch import nn
 from tqdm import tqdm
 import env
-from env import SolarEnv, MemoryBuffer
+from env import SolarEnv
+from models import Agent
 if __name__ == '__main__':
     #TODO Use farama Vector env instead
     # Create version of Solar Env that's compatible with the spec here
@@ -37,14 +38,16 @@ if __name__ == '__main__':
     log_interval = 1000
     interval = 0
     batch_size = 100
-    memoryBuffer = MemoryBuffer(batch_size)
+    agent: Agent = Agent(2) #Hold or sell are the ations we will take
     for episode in tqdm(range(num_episodes)):
-        observation = envs.reset()
+        observation, _ = envs.reset()
         done = False
 
         while not done:
             # Replace 'your_action' with the action you want to take in the environment (e.g., 0, 1, 2, ...)
-            actions =  envs.action_space.sample()
+            
+            actions = agent.choose_action(observation)
+
     
             next_observation, reward, done,truncated,  _ = envs.step(actions)
 

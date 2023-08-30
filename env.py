@@ -13,24 +13,6 @@ import torch
 from torch import nn
 from tqdm import tqdm
 
-class HyperParameterConfig():
-    num_epochs = 100
-    num_steps = 2048
-    batch_size = 64
-    clip_epsilon = 0.2
-    value_coeff = 0.5
-    entropy_coeff = 0.01
-    learning_rate = 0.1
-    #For GAE
-    gamma = 0.99
-    gae_lambda = 0.95
-
-
-
-
-
-
-
 #TODO Create simple MLP or RNN to do actions
 #TODO incorporate price fluctuations. 
 
@@ -58,7 +40,7 @@ class SolarEnv(gym.Env):
         plt.show(block=False)
 
         self.df = data
-        self.action_space = spaces.Discrete(3)
+        self.action_space = spaces.Discrete(2)
         self.observation_space = spaces.Box(
             low=0, high=np.inf, shape=(12,), dtype=np.float32
         )
@@ -100,7 +82,7 @@ class SolarEnv(gym.Env):
             self.wattage_balance -= self.power_sub
             if self.wattage_balance < 0:
                 #Subtract from the balance
-                self.balance -= abs(self.wattage_balance * WATTAGE_RATE)
+                self.balance -= abs(self.wattage_balance * WATTAGE_RATE) 
             self.actions.append(action)
         #Sell it back to the grid
         #First subtract the wattage consumed from the balane

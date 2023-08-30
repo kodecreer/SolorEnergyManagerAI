@@ -4,6 +4,18 @@ import torch.optim as optim
 import torch
 from torch.distributions import Categorical
 import numpy as np
+class HyperParameterConfig():
+    num_epochs = 100
+    num_steps = 2048
+    batch_size = 64
+    clip_epsilon = 0.2
+    value_coeff = 0.5
+    entropy_coeff = 0.01
+    learning_rate = 0.1
+    #For GAE
+    gamma = 0.99
+    gae_lambda = 0.95
+
 
 class ActorNetwork(nn.Module):
     def __init__(self, n_actions, input_dims, alpha,
@@ -12,7 +24,7 @@ class ActorNetwork(nn.Module):
 
         self.checkpoint_file = os.path.join(chkpt_dir, 'actor_torch_ppo')
         self.actor = nn.Sequential(
-                nn.Linear(*input_dims, fc1_dims),
+                nn.Linear(input_dims, fc1_dims),
                 nn.ReLU(),
                 nn.Linear(fc1_dims, fc2_dims),
                 nn.ReLU(),
@@ -43,7 +55,7 @@ class CriticNetwork(nn.Module):
 
         self.checkpoint_file = os.path.join(chkpt_dir, 'critic_torch_ppo')
         self.critic = nn.Sequential(
-                nn.Linear(*input_dims, fc1_dims),
+                nn.Linear(input_dims, fc1_dims),
                 nn.ReLU(),
                 nn.Linear(fc1_dims, fc2_dims),
                 nn.ReLU(),
@@ -71,6 +83,12 @@ class Agent:
         self.actor = ActorNetwork(n_actions, 256, 0.0001)
         self.critic = CriticNetwork(256, 0.0001)
         self.memory = MemoryBuffer(100)
+    def choose_action(self, observation):
+        dist = self.actor(observation)
+        value = self.critic(observation)
+        action = dist.sample()
+        probs = dist.log_prob(action)
+        return action, probs, value
 
 
 # Implement the memory buffer
@@ -108,6 +126,7 @@ class MemoryBuffer:
         self.values = np.array([])
         self.rewards = np.array([])
         self.dones = np.array([])
+    
         
 #TODO Impliment PPO Algorithm in Pytorch. Vectorize if possible without referencing my Pokemon project!!!
 def clipped_ppo(actor: torch.nn.Module, critic: torch.nn.Module, buffer: MemoryBuffer, optimizer_actor, optimizer_critic, config: HyperParameterConfig = None):

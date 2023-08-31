@@ -1,2 +1,4 @@
 *.cpython*
 *pycache*
+__pycache__/*
+.DS_STORE

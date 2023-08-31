@@ -14,7 +14,7 @@ from torch import nn
 from tqdm import tqdm
 import env
 from env import SolarEnv
-from models import Agent
+from models import Agent, HyperParameterConfig
 if __name__ == '__main__':
     #TODO Use farama Vector env instead
     # Create version of Solar Env that's compatible with the spec here
@@ -32,28 +32,35 @@ if __name__ == '__main__':
     observation = envs.reset()
 
     # Define the number of episodes (or time steps) you want to run the environment
-    num_episodes = 1
+    num_episodes = 10
     #How often to update the graph.
     #The lower the number, the slower it goes through all the adata
     log_interval = 1000
     interval = 0
     batch_size = 100
-    agent: Agent = Agent(2) #Hold or sell are the ations we will take
+    params = HyperParameterConfig()
+    agent: Agent = Agent(2, params) #Hold or sell are the ations we will take
     for episode in tqdm(range(num_episodes)):
+        envs.balance = 0
         observation, _ = envs.reset()
         done = False
 
         while not done:
             # Replace 'your_action' with the action you want to take in the environment (e.g., 0, 1, 2, ...)
-            
-            actions = agent.choose_action(observation)
+            actions, probs, value = agent.choose_action(observation)
 
     
             next_observation, reward, done,truncated,  _ = envs.step(actions)
 
+            agent.memory.push(observation, actions, probs, value, reward, done )
+            if agent.memory.size() >= agent.memory.batch_size:
+                #If we have a large enough data then start learning
+                with torch.autograd.set_detect_anomaly(True):
+                    agent.clipped_ppo()
+                pass
             if interval >= log_interval:
                 # You can render the environment at each step if you want to visualize the progress
-                envs.render()
+                # envs.render()
                 interval = 0
 
             # Update the current observation with the next observation

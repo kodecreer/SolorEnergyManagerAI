@@ -49,7 +49,7 @@ class SolarEnv(gym.Env):
         self.wattage_balance = 0
         self.power_daily = 866
         self.power_sub = self.power_daily / 48 #Kilowatts to substract from wattage_balance per time step
-
+        self.carbon_punishment = 5
         self.current_step = 0
         self.hour = 1
         self.vimp = []
@@ -82,7 +82,7 @@ class SolarEnv(gym.Env):
             self.wattage_balance -= self.power_sub
             if self.wattage_balance < 0:
                 #Subtract from the balance
-                self.balance -= abs(self.wattage_balance * WATTAGE_RATE) 
+                self.balance -= abs(self.wattage_balance * WATTAGE_RATE) * self.carbon_punishment
             self.actions.append(action)
         #Sell it back to the grid
         #First subtract the wattage consumed from the balane
@@ -98,7 +98,7 @@ class SolarEnv(gym.Env):
                 self.wattage_balance = 0
             else:
                 #Subtract from the balance
-                self.balance -= abs(self.wattage_balance * WATTAGE_RATE)
+                self.balance -= abs(self.wattage_balance * WATTAGE_RATE) * self.carbon_punishment
                 self.wattage_balance = 0
             self.actions.append(action)
         self.rewards.append(self.balance)

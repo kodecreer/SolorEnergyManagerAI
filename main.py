@@ -43,8 +43,9 @@ if __name__ == '__main__':
         envs.balance = 0
         observation, _ = envs.reset()
         done = [False]
-
-        while not sum(done):
+        #When not done. This is an array of 
+        #dones
+        while sum(done) < envs_running:
             # Replace 'your_action' with the action you want to take in the environment (e.g., 0, 1, 2, ...)
             actions, probs, value = agent.choose_action(observation)
 

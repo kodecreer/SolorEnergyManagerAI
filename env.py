@@ -110,6 +110,7 @@ class SolarEnv(gym.Env):
         #Since that is the key statistic we want to maximize.
         #May need to consider something else later
         reward = self.calc_reward()
+        self.current_step += 1
         return observation,reward,  done, truncated, {}
 
     def reset(self, seed=None, options=None):

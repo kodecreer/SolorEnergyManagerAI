@@ -19,9 +19,10 @@ from tqdm import tqdm
 class SolarEnv(gym.Env):
     metadata = {'render.modes': ['human', 'rgb_array'], 'render_modes': ['human', 'rgb_array'], 'render_fps': 30}  # Add 'render_fps'
 
-    def __init__(self):
+    def __init__(self, is_dummy=False):
         super(SolarEnv, self).__init__()
-        data = pd.read_excel('./dummy_data.xlsx')
+        data = pd.read_excel('./Solar data_2016.xlsx')
+        self.energy_prices = pd.read_excel('Energy Price_2016.xlsx')
 
         self.fig, self.ax = plt.subplots(2, 2)
         self.ax[0][0].set_xlabel('Timestep')

@@ -81,6 +81,7 @@ class CriticNetwork(nn.Module):
 class Agent:
     def __init__(self, n_actions, HyperParams: HyperParameterConfig) -> None:
         self.actor = ActorNetwork(n_actions, 12, 0.0001)
+        print(self.actor.device)
         self.critic = CriticNetwork(12, 0.0001)
         self.memory = MemoryBuffer(100)
         self.config = HyperParams
@@ -138,6 +139,63 @@ class Agent:
                 total_loss.backward()
                 self.actor.optimizer.step()
                 self.critic.optimizer.step()
+        self.memory.clear() 
+    def vectorized_clipped_ppo(self):
+        #Run PPO Algorithm
+        for _ in range(self.config.num_epochs):
+            # Calculate General Advantage Estimate
+            state_arr, action_arr, old_prob_arr, vals_arr,\
+            reward_arr, dones_arr, batches = \
+                    self.memory.sample()
+            
+            values = vals_arr
+            advantage = np.zeros(len(reward_arr), dtype=np.float32)
+            reward_arr = torch.tensor(reward_arr)
+            dones_arr = torch.tensor(dones_arr, dtype=torch.int8)
+            values = torch.tensor(values)
+
+            for t in range(reward_arr.size(0)-1):
+                init_discount = 1.0
+                exps = torch.arange(t+1, reward_arr.size(0))
+                discount = torch.pow( init_discount * self.config.gamma * self.config.gae_lambda, exps - t - 1)
+
+                a_t = torch.zeros(t, len(reward_arr)-1)
+                intermediate = reward_arr[t:-1] + self.config.gamma * values[t+1:] * (1-dones_arr[t:-1]) - values[t:-1]
+                a_t = torch.sum(discount *intermediate)
+                advantage[t] = a_t
+
+            advantage = torch.tensor(advantage)
+            values = torch.tensor(values)
+            states = []
+            old_probs = []
+            actions = []
+            for batch in batches:
+                states.append( state_arr[batch] )
+                old_probs.append( old_prob_arr[batch] )
+                actions.append(action_arr[batch])
+            states = torch.tensor(states)
+            old_probs = torch.tensor(old_probs).view(-1, 1)
+            actions = torch.tensor(actions).view(-1, 1)
+         
+            distributions: torch.distributions.Categorical = self.actor(states)
+            critic_value = self.critic(states)
+            new_probs = distributions.log_prob(actions)
+            prob_ratio = new_probs.exp() / old_probs.exp()
+            weighted_probs = prob_ratio * advantage[batch]
+
+            weighted_clip_probs = torch.clamp(prob_ratio, 1 - self.config.clip_epsilon, 1 + self.config.clip_epsilon) * advantage[batch]
+            actor_loss = -torch.min(weighted_probs, weighted_clip_probs).mean() #negative so it can get added together
+            gains = advantage + values
+            critic_loss = (gains - critic_value)**2
+            critic_loss = critic_loss.mean()
+
+            total_loss = critic_loss - actor_loss *0.5 #Add a weight 
+            self.actor.optimizer.zero_grad()
+            self.critic.optimizer.zero_grad()
+
+            total_loss.backward()
+            self.actor.optimizer.step()
+            self.critic.optimizer.step()
         self.memory.clear() 
 
 #TODO define a clear method from the buffer.

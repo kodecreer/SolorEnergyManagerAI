@@ -23,24 +23,29 @@ class SolarEnv(gym.Env):
         super(SolarEnv, self).__init__()
         data = pd.read_excel('./Solar data_2016.xlsx')
         self.energy_prices = pd.read_excel('Energy Price_2016.xlsx')
+        self.energy_prices = self.energy_prices[self.energy_prices["Price hub"].replace(' ', '') == 'Mid C Peak']
+        self.energy_prices = self.energy_prices[1:]#because it has January 30th
+        self.energy_prices = self.energy_prices.loc('Avg price ')
+        self.energy_step = 0 
 
-        self.fig, self.ax = plt.subplots(2, 2)
-        self.ax[0][0].set_xlabel('Timestep')
-        self.ax[0][0].set_ylabel('Balance')
+        # self.fig, self.ax = plt.subplots(2, 2)
+        # self.ax[0][0].set_xlabel('Timestep')
+        # self.ax[0][0].set_ylabel('Balance')
 
-        self.ax[0][1].set_xlabel('Timestep')
-        self.ax[0][1].set_ylabel('VMP')
+        # self.ax[0][1].set_xlabel('Timestep')
+        # self.ax[0][1].set_ylabel('VMP')
 
-        self.ax[1][0].set_xlabel('Timestep')
-        self.ax[1][0].set_ylabel('IMP')
+        # self.ax[1][0].set_xlabel('Timestep')
+        # self.ax[1][0].set_ylabel('IMP')
 
-        self.ax[1][1].set_xlabel('Timestep')
-        self.ax[1][1].set_ylabel('Reward')
+        # self.ax[1][1].set_xlabel('Timestep')
+        # self.ax[1][1].set_ylabel('Reward')
 
-        plt.ion()
-        plt.show(block=False)
+        # plt.ion()
+        # plt.show(block=False)
 
         self.df = data
+        self.train_sz = len(self.df)-1
         self.action_space = spaces.Discrete(2)
         self.observation_space = spaces.Box(
             low=0, high=np.inf, shape=(12,), dtype=np.float32
@@ -58,8 +63,8 @@ class SolarEnv(gym.Env):
         self.actions = []
         self.rewards = []
 
-    def calc_reward(self):
-        return self.balance
+    def calc_reward(self, last_balance):
+        return self.balance - last_balance
         
     def get_wattage(self, vmp, imp):
         pmax = vmp * imp
@@ -68,9 +73,10 @@ class SolarEnv(gym.Env):
     def step(self, action):
         vimp = self.df['Vmp'][self.current_step]
         imp = self.df['Imp'][self.current_step]
-  
-        self.vimp.append(vimp)
-        self.imp.append(imp)
+
+        last_balance = self.balance
+        # self.vimp.append(vimp)
+        # self.imp.append(imp)
         WATTAGE_RATE = random.random()
 
         kilo_watts = self.get_wattage(vimp, imp)#Lets assum Kilo Watts for now
@@ -80,7 +86,7 @@ class SolarEnv(gym.Env):
             #Add it to the balance
             self.wattage_balance += kilo_watts
             #subtract the amount of energy consumed
-            self.wattage_balance -= self.power_sub
+            self.wattage_balance -= self.power_sub + random.randint(-10, 10)
             if self.wattage_balance < 0:
                 #Subtract from the balance
                 self.balance -= abs(self.wattage_balance * WATTAGE_RATE) * self.carbon_punishment
@@ -104,14 +110,13 @@ class SolarEnv(gym.Env):
             self.actions.append(action)
         self.rewards.append(self.balance)
         self.current_step += 1
-        done = self.current_step >= len(self.df) - 1
+        done = self.current_step >= self.train_sz
         observation = np.array(self.df.iloc[self.current_step].values)
         truncated = False
         #for now we will naively set the reward to the balance...
         #Since that is the key statistic we want to maximize.
         #May need to consider something else later
-        reward = self.calc_reward()
-        self.current_step += 1
+        reward = self.calc_reward(last_balance)
         return observation,reward,  done, truncated, {}
 
     def reset(self, seed=None, options=None):
@@ -124,29 +129,29 @@ class SolarEnv(gym.Env):
 
     def render(self, mode='human'):
         log_val = 100
-        x_data = range(0, min(len(self.actions), log_val))
-        self.ax[0][0].clear()
-        self.ax[0][1].clear()
-        self.ax[1][0].clear()
-        self.ax[1][1].clear()
+        # x_data = range(0, min(len(self.actions), log_val))
+        # self.ax[0][0].clear()
+        # self.ax[0][1].clear()
+        # self.ax[1][0].clear()
+        # self.ax[1][1].clear()
 
-        self.ax[0][0].set_xlim(min(x_data), max(x_data))
-        self.ax[0][0].set_ylim(min(self.actions[-log_val:]), max(self.actions[-log_val:]))
-        self.ax[0][0].plot(x_data, self.actions[-log_val:])
+        # self.ax[0][0].set_xlim(min(x_data), max(x_data))
+        # self.ax[0][0].set_ylim(min(self.actions[-log_val:]), max(self.actions[-log_val:]))
+        # self.ax[0][0].plot(x_data, self.actions[-log_val:])
 
-        self.ax[0][1].set_xlim(min(x_data), max(x_data))
-        self.ax[0][1].set_ylim(min(self.vimp[-log_val:]), max(self.vimp[-log_val:]))
-        self.ax[0][1].plot(x_data, self.vimp[-log_val:])
+        # self.ax[0][1].set_xlim(min(x_data), max(x_data))
+        # self.ax[0][1].set_ylim(min(self.vimp[-log_val:]), max(self.vimp[-log_val:]))
+        # self.ax[0][1].plot(x_data, self.vimp[-log_val:])
 
-        self.ax[1][0].set_xlim(min(x_data), max(x_data))
-        self.ax[1][0].set_ylim(min(self.imp[-log_val:]), max(self.imp[-log_val:]))
-        self.ax[1][0].plot(x_data, self.imp[-log_val:])
+        # self.ax[1][0].set_xlim(min(x_data), max(x_data))
+        # self.ax[1][0].set_ylim(min(self.imp[-log_val:]), max(self.imp[-log_val:]))
+        # self.ax[1][0].plot(x_data, self.imp[-log_val:])
 
-        self.ax[1][1].set_xlim(min(x_data), max(x_data))
-        self.ax[1][1].set_ylim(min(self.rewards[-log_val:]), max(self.rewards[-log_val:]))
-        self.ax[1][1].plot(x_data, self.rewards[-log_val:])
+        # self.ax[1][1].set_xlim(min(x_data), max(x_data))
+        # self.ax[1][1].set_ylim(min(self.rewards[-log_val:]), max(self.rewards[-log_val:]))
+        # self.ax[1][1].plot(x_data, self.rewards[-log_val:])
 
-        self.fig.canvas.draw()
-        plt.pause(1e-40)
+        # self.fig.canvas.draw()
+        # plt.pause(1e-40)
         
 gym.register(id='SolarEnv-v0', entry_point=SolarEnv)

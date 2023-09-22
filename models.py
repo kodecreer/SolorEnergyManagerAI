@@ -19,10 +19,10 @@ class HyperParameterConfig():
 
 class ActorNetwork(nn.Module):
     def __init__(self, n_actions, input_dims, alpha,
-            fc1_dims=256, fc2_dims=256, chkpt_dir='tmp'):
+            fc1_dims=512, fc2_dims=512, chkpt_dir='tmp'):
         super(ActorNetwork, self).__init__()
 
-        self.checkpoint_file = os.path.join(chkpt_dir, 'actor_torch_ppo')
+        self.checkpoint_file = os.path.join(chkpt_dir, 'actor_torch_ppo.mdl')
         self.actor = nn.Sequential(
                 nn.Linear(input_dims, fc1_dims),
                 nn.ReLU(),
@@ -49,11 +49,11 @@ class ActorNetwork(nn.Module):
         self.load_state_dict(torch.load(self.checkpoint_file))
 
 class CriticNetwork(nn.Module):
-    def __init__(self, input_dims, alpha, fc1_dims=256, fc2_dims=256,
+    def __init__(self, input_dims, alpha, fc1_dims=512, fc2_dims=512,
             chkpt_dir='tmp'):
         super(CriticNetwork, self).__init__()
 
-        self.checkpoint_file = os.path.join(chkpt_dir, 'critic_torch_ppo')
+        self.checkpoint_file = os.path.join(chkpt_dir, 'critic_torch_ppo.mdl')
         self.critic = nn.Sequential(
                 nn.Linear(input_dims, fc1_dims),
                 nn.ReLU(),

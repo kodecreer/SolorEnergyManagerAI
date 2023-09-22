@@ -82,7 +82,8 @@ if __name__ == '__main__':
             observation = next_observation
             interval += 1
 
-        
+    agent.actor.save_checkpoint()
+    agent.critic.save_checkpoint()
     plt.plot(graphx, graphy)
     plt.show()    
     # Close the environment when done

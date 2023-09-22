@@ -1,5 +1,5 @@
 matplotlib
 torch
 pandas
-gymnaisum
+gymnasium
 tqdm

@@ -85,7 +85,7 @@ if __name__ == '__main__':
     agent.actor.save_checkpoint()
     agent.critic.save_checkpoint()
     plt.plot(graphx, graphy)
-    plt.show()    
+    plt.savefig('metrics.pdf', bbox_inches='tight')    
     # Close the environment when done
     print(sum(agent.memory.rewards[-1]))
     envs.close()

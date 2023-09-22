@@ -34,7 +34,7 @@ class ActorNetwork(nn.Module):
 
         self.optimizer = optim.Adam(self.parameters(), lr=alpha)
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-        self.to(self.device)
+        self = self.to(self.device)
 
     def forward(self, state):
         dist = self.actor(state)
@@ -64,7 +64,7 @@ class CriticNetwork(nn.Module):
 
         self.optimizer = optim.Adam(self.parameters(), lr=alpha)
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-        self.to(self.device)
+        self = self.to(self.device)
 
     def forward(self, state):
         value = self.critic(state)
@@ -82,16 +82,17 @@ class Agent:
     def __init__(self, n_actions, HyperParams: HyperParameterConfig) -> None:
         self.actor = ActorNetwork(n_actions, 12, 0.0001)
         print(self.actor.device)
+        self.device = self.actor.device
         self.critic = CriticNetwork(12, 0.0001)
         self.memory = MemoryBuffer(100)
         self.config = HyperParams
     
     def choose_action(self, observation):
-        observation = torch.tensor(observation, dtype=torch.float)
+        observation = torch.tensor(observation, dtype=torch.float).to(self.device)
         dist = self.actor(observation)
-        value = self.critic(observation)
+        value = self.critic(observation).to(self.device)
         action = dist.sample()
-        probs = dist.log_prob(action)
+        probs = dist.log_prob(action).to(self.device)
         return action, probs, value
     
     #TODO Impliment PPO Algorithm in Pytorch. Vectorize if possible without referencing my Pokemon project!!!
@@ -149,23 +150,23 @@ class Agent:
                     self.memory.sample()
             
             values = vals_arr
-            advantage = np.zeros(len(reward_arr), dtype=np.float32)
-            reward_arr = torch.tensor(reward_arr)
-            dones_arr = torch.tensor(dones_arr, dtype=torch.int8)
-            values = torch.tensor(values)
+            advantage = torch.zeros(len(reward_arr)).to(self.device)
+            reward_arr = torch.tensor(reward_arr).to(self.device)
+            dones_arr = torch.tensor(dones_arr, dtype=torch.int8).to(self.device)
+            values = torch.tensor(values).to(self.device)
 
             for t in range(reward_arr.size(0)-1):
                 init_discount = 1.0
-                exps = torch.arange(t+1, reward_arr.size(0))
-                discount = torch.pow( init_discount * self.config.gamma * self.config.gae_lambda, exps - t - 1)
+                exps = torch.arange(t+1, reward_arr.size(0)).to(self.device)
+                discount = torch.pow( init_discount * self.config.gamma * self.config.gae_lambda, exps - t - 1).to(self.device)
 
-                a_t = torch.zeros(t, len(reward_arr)-1)
+                a_t = torch.zeros(t, len(reward_arr)-1).to(self.device)
                 intermediate = reward_arr[t:-1] + self.config.gamma * values[t+1:] * (1-dones_arr[t:-1]) - values[t:-1]
-                a_t = torch.sum(discount *intermediate)
+                a_t = torch.sum(discount *intermediate).to(self.device)
                 advantage[t] = a_t
 
-            advantage = torch.tensor(advantage)
-            values = torch.tensor(values)
+            # advantage = torch.tensor(advantage)
+            values = torch.tensor(values).to(self.device)
             states = []
             old_probs = []
             actions = []
@@ -173,18 +174,19 @@ class Agent:
                 states.append( state_arr[batch] )
                 old_probs.append( old_prob_arr[batch] )
                 actions.append(action_arr[batch])
-            states = torch.tensor(states)
-            old_probs = torch.tensor(old_probs).view(-1, 1)
-            actions = torch.tensor(actions).view(-1, 1)
+            states = torch.tensor(states).to(self.device)
+            old_probs = torch.tensor(old_probs).view(-1, 1).to(self.device)
+            actions = torch.tensor(actions).view(-1, 1).to(self.device)
          
             distributions: torch.distributions.Categorical = self.actor(states)
-            critic_value = self.critic(states)
-            new_probs = distributions.log_prob(actions)
+            critic_value = self.critic(states).to(self.device)
+            new_probs = distributions.log_prob(actions).to(self.device)
             prob_ratio = new_probs.exp() / old_probs.exp()
             weighted_probs = prob_ratio * advantage[batch]
 
-            weighted_clip_probs = torch.clamp(prob_ratio, 1 - self.config.clip_epsilon, 1 + self.config.clip_epsilon) * advantage[batch]
-            actor_loss = -torch.min(weighted_probs, weighted_clip_probs).mean() #negative so it can get added together
+            weighted_clip_probs = torch.clamp(prob_ratio, 1 - self.config.clip_epsilon, 1 + self.config.clip_epsilon).to(self.device)\
+                  * advantage[batch]
+            actor_loss = -torch.min(weighted_probs, weighted_clip_probs).mean().to(self.device) #negative so it can get added together
             gains = advantage + values
             critic_loss = (gains - critic_value)**2
             critic_loss = critic_loss.mean()

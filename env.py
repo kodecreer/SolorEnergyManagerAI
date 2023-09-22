@@ -12,7 +12,7 @@ import torch
 
 from torch import nn
 from tqdm import tqdm
-
+from datetime import datetime
 #TODO Create simple MLP or RNN to do actions
 #TODO incorporate price fluctuations. 
 
@@ -24,9 +24,14 @@ class SolarEnv(gym.Env):
         data = pd.read_excel('./Solar data_2016.xlsx')
         self.energy_prices = pd.read_excel('Energy Price_2016.xlsx')
         self.energy_prices = self.energy_prices[self.energy_prices["Price hub"].replace(' ', '') == 'Mid C Peak']
-        self.energy_prices = self.energy_prices[1:]#because it has January 30th
-        self.energy_prices = self.energy_prices.loc('Avg price ')
+        self.energy_prices = self.energy_prices[2:]#because it has January 30th
+        self.energy_dates = self.energy_prices['Trade date'].values
+        self.energy_prices = self.energy_prices['Avg price $/MWh'].values
+        
         self.energy_step = 0 
+        self.energy_buffer = 0
+        self.last_date = np.datetime64("2016-01-01T00:00:00.000000000")
+        
 
         # self.fig, self.ax = plt.subplots(2, 2)
         # self.ax[0][0].set_xlabel('Timestep')
@@ -53,16 +58,17 @@ class SolarEnv(gym.Env):
         #Key for the AI network
         self.balance = 0
         self.wattage_balance = 0
-        self.power_daily = 866
+        self.power_daily = 866 / 31
         self.power_sub = self.power_daily / 48 #Kilowatts to substract from wattage_balance per time step
         self.carbon_punishment = 5
         self.current_step = 0
+
         self.hour = 1
         self.vimp = []
         self.imp = []
         self.actions = []
         self.rewards = []
-
+  
     def calc_reward(self, last_balance):
         return self.balance - last_balance
         
@@ -77,16 +83,30 @@ class SolarEnv(gym.Env):
         last_balance = self.balance
         # self.vimp.append(vimp)
         # self.imp.append(imp)
-        WATTAGE_RATE = random.random()
+
+        #Account for weekend
+        current_date = self.energy_dates[self.energy_step]
+       
+        if current_date - self.last_date > 1:
+            self.energy_buffer = current_date - self.last_date
+    
+        if self.energy_buffer <= 0:
+            self.energy_step += 1
+            self.last_date = current_date
+        self.energy_buffer -= 1
+            
+
+
+        WATTAGE_RATE = self.energy_prices[self.energy_step]
 
         kilo_watts = self.get_wattage(vimp, imp)#Lets assum Kilo Watts for now
 
         #Hold the power
         if action == 1 and len(self.actions) > 0:
             #Add it to the balance
-            self.wattage_balance += kilo_watts
+            self.wattage_balance += kilo_watts  #I am assuming the grid would only buy at discounts
             #subtract the amount of energy consumed
-            self.wattage_balance -= self.power_sub + random.randint(-10, 10)
+            self.wattage_balance -= self.power_sub 
             if self.wattage_balance < 0:
                 #Subtract from the balance
                 self.balance -= abs(self.wattage_balance * WATTAGE_RATE) * self.carbon_punishment
@@ -100,7 +120,8 @@ class SolarEnv(gym.Env):
             self.wattage_balance += kilo_watts
             
             if self.wattage_balance > 0:
-                self.balance += self.wattage_balance * WATTAGE_RATE
+                #Assuming it's a discount back to thep ower grid
+                self.balance += self.wattage_balance * WATTAGE_RATE * 0.8 
                 #clear the wattages
                 self.wattage_balance = 0
             else:

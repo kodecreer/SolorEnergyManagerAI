@@ -23,7 +23,7 @@ if __name__ == '__main__':
 
     # env = gym.make('CartPole-v1', num_envs=2)
     # envs = gym.make('SolarEnv-v0')
-    envs_running = 8 #amount of envs running for data collection
+    envs_running = 4 #amount of envs running for data collection
     envs = gym.vector.SyncVectorEnv(
         [lambda: gym.make("SolarEnv-v0") for _ in range(envs_running)]
     )
@@ -37,15 +37,23 @@ if __name__ == '__main__':
     #The lower the number, the slower it goes through all the adata
     log_interval = 1000
     interval = 0
-    batch_size = 2e20
+    batch_size = 600
+    torch.set_default_device('cuda')
     params = HyperParameterConfig()
     agent: Agent = Agent(2, params) #Hold or sell are the ations we will take
+    agent.memory.batch_size = batch_size
+    graphx = []
+    graphy = []
+    testx = []
+    testy = []
+    #TODO Test this on a training set of 2017 if possible. Otherwise sample it
+    #From data in the current set
     for episode in tqdm(range(num_episodes)):
         observation, _ = envs.reset()
         done = [False]
         #When not done. This is an array of 
         #dones
-        ts = 0
+
         while sum(done) < envs_running:
             
 
@@ -60,20 +68,23 @@ if __name__ == '__main__':
             if agent.memory.size() >= agent.memory.batch_size:
                 #If we have a large enough data then start learning
                 print(f'Reward: {sum(reward)/envs_running}')
-                print(f"Learning {ts}...")
+                print(f"Learning ...")
                 agent.vectorized_clipped_ppo()
                 
-            if interval >= log_interval:
+            if interval % log_interval == 0:
                 # You can render the environment at each step if you want to visualize the progress
                 # envs.render()
-                interval = 0
+                graphx.append(interval)
+                graphy.append(sum(reward) / envs_running)
+                # interval = 0
 
             # Update the current observation with the next observation
             observation = next_observation
             interval += 1
-            ts += 1
+
         
-        
+    plt.plot(graphx, graphy)
+    plt.show()    
     # Close the environment when done
     print(sum(agent.memory.rewards[-1]))
     envs.close()

@@ -23,7 +23,7 @@ if __name__ == '__main__':
 
     # env = gym.make('CartPole-v1', num_envs=2)
     # envs = gym.make('SolarEnv-v0')
-    envs_running = 40 #amount of envs running for data collection
+    envs_running = 5 #amount of envs running for data collection
     envs = gym.vector.SyncVectorEnv(
         [lambda: gym.make("SolarEnv-v0") for _ in range(envs_running)]
     )
@@ -37,13 +37,16 @@ if __name__ == '__main__':
     #The lower the number, the slower it goes through all the adata
     log_interval = 1000
     interval = 0
-    batch_size = 600
+    batch_size = 18000
     torch.set_default_device('cuda')
     params = HyperParameterConfig()
     agent: Agent = Agent(2, params) #Hold or sell are the ations we will take
     agent.memory.batch_size = batch_size
     graphx = []
     graphy = []
+    test_size = 40
+    random.seed(40) #For consistency
+    test_inds = random.sample(range(0, 365), test_size)
     testx = []
     testy = []
     #TODO Test this on a training set of 2017 if possible. Otherwise sample it
@@ -53,39 +56,51 @@ if __name__ == '__main__':
         done = [False]
         #When not done. This is an array of 
         #dones
-
+        step = 0
         while sum(done) < envs_running:
             
-
             # Replace 'your_action' with the action you want to take in the environment (e.g., 0, 1, 2, ...)
             actions, probs, value = agent.choose_action(observation)
             
     
-            next_observation, reward, done,truncated,  _ = envs.step(actions)
             
-            for obs, action, prob, val, rew, don in zip(observation, actions, probs, value, reward, done):
-                agent.memory.push( obs, action, prob, val, rew, don)
-            if agent.memory.size() >= agent.memory.batch_size:
-                #If we have a large enough data then start learning
-                print(f'Reward: {sum(reward)/envs_running}')
-                print(f"Learning ...")
-                agent.vectorized_clipped_ppo()
-                
-            if interval % log_interval == 0:
-                # You can render the environment at each step if you want to visualize the progress
-                # envs.render()
-                graphx.append(interval)
-                graphy.append(sum(reward) / envs_running)
-                # interval = 0
+            if step in test_inds:
+                #Perform calculations without gradients
+                with torch.no_grad():
+                    next_observation, reward, done,truncated,  _ = envs.step(actions)
+                    testx.append(len(testx) + 1)
+                    testy.append(sum(reward) / envs_running)
+            else:
+                next_observation, reward, done,truncated,  _ = envs.step(actions)
+                for obs, action, prob, val, rew, don in zip(observation, actions, probs, value, reward, done):
+                    agent.memory.push( obs, action, prob, val, rew, don)
+
+                if agent.memory.size() >= agent.memory.batch_size:
+                    #If we have a large enough data then start learning
+                    print(f'Reward: {sum(reward)/envs_running}')
+                    print(f"Learning ...")
+                    agent.vectorized_clipped_ppo()
+                    
+                if interval % log_interval == 0:
+                    # You can render the environment at each step if you want to visualize the progress
+                    # envs.render()
+                    graphx.append(interval)
+                    graphy.append(sum(reward) / envs_running)
+                    # interval = 0
+                    interval += 1
 
             # Update the current observation with the next observation
             observation = next_observation
-            interval += 1
+            
 
     agent.actor.save_checkpoint()
     agent.critic.save_checkpoint()
     plt.plot(graphx, graphy)
-    plt.savefig('metrics.pdf', bbox_inches='tight')    
+    plt.savefig('train_metrics.pdf', bbox_inches='tight')   
+    plt.cla()
+    plt.clf()
+    plt.plot(testx, testy)
+    plt.savefig('test_metrics.pdf', bbox_inches='tight')  
     # Close the environment when done
     print(sum(agent.memory.rewards[-1]))
     envs.close()

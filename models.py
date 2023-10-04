@@ -4,8 +4,9 @@ import torch.optim as optim
 import torch
 from torch.distributions import Categorical
 import numpy as np
+import torch.nn.functional as F
 class HyperParameterConfig():
-    num_epochs = 100
+    num_epochs = 10
     num_steps = 2048
     batch_size = 64
     clip_epsilon = 0.2
@@ -19,7 +20,7 @@ class HyperParameterConfig():
 
 class ActorNetwork(nn.Module):
     def __init__(self, n_actions, input_dims, alpha,
-            fc1_dims=512, fc2_dims=512, chkpt_dir='tmp'):
+            fc1_dims=256, fc2_dims=256, chkpt_dir='tmp'):
         super(ActorNetwork, self).__init__()
 
         self.checkpoint_file = os.path.join(chkpt_dir, 'actor_torch_ppo.mdl')
@@ -49,7 +50,7 @@ class ActorNetwork(nn.Module):
         self.load_state_dict(torch.load(self.checkpoint_file))
 
 class CriticNetwork(nn.Module):
-    def __init__(self, input_dims, alpha, fc1_dims=512, fc2_dims=512,
+    def __init__(self, input_dims, alpha, fc1_dims=256, fc2_dims=256,
             chkpt_dir='tmp'):
         super(CriticNetwork, self).__init__()
 
@@ -77,6 +78,53 @@ class CriticNetwork(nn.Module):
     def load_checkpoint(self):
         self.load_state_dict(torch.load(self.checkpoint_file))
 
+class ActorRNN(nn.Module):
+    def __init__(self, n_actions, input_dims, alpha, chkpt_dir='tmp'):
+        super(ActorRNN, self).__init__()
+
+        self.checkpoint_file = os.path.join(chkpt_dir, 'actor_torch_ppo.mdl')
+        self.actor = nn.GRU(input_dims, n_actions)
+        self.hidden = None
+        self.optimizer = optim.Adam(self.parameters(), lr=alpha)
+        self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+        self = self.to(self.device)
+
+    def forward(self, state):
+
+        dist, hidden = self.actor(state, self.hidden)
+        dist = Categorical(F.softmax(dist, dim=-1))
+        self.hidden = hidden.detach().clone()
+
+        return dist
+
+    def save_checkpoint(self):
+        torch.save(self.state_dict(), self.checkpoint_file)
+
+    def load_checkpoint(self):
+        self.load_state_dict(torch.load(self.checkpoint_file))
+
+class CriticRNN(nn.Module):
+    def __init__(self, input_dims, alpha, fc1_dims=256, fc2_dims=256,
+            chkpt_dir='tmp'):
+        super(CriticRNN, self).__init__()
+
+        self.checkpoint_file = os.path.join(chkpt_dir, 'critic_torch_ppo.mdl')
+        self.critic = nn.GRU(input_dims, 1)
+        self.hidden = None
+        self.optimizer = optim.Adam(self.parameters(), lr=alpha)
+        self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+        self = self.to(self.device)
+
+    def forward(self, state):
+        value, hidden = self.critic(state, self.hidden)
+        self.hidden = hidden.detach().clone()
+        return value
+
+    def save_checkpoint(self):
+        torch.save(self.state_dict(), self.checkpoint_file)
+
+    def load_checkpoint(self):
+        self.load_state_dict(torch.load(self.checkpoint_file))
 
 class Agent:
     def __init__(self, n_actions, HyperParams: HyperParameterConfig) -> None:
@@ -154,7 +202,7 @@ class Agent:
             reward_arr = torch.tensor(reward_arr).to(self.device)
             dones_arr = torch.tensor(dones_arr, dtype=torch.int8).to(self.device)
             values = torch.tensor(values).to(self.device)
-
+            
             for t in range(reward_arr.size(0)-1):
                 init_discount = 1.0
                 exps = torch.arange(t+1, reward_arr.size(0)).to(self.device)
@@ -200,6 +248,17 @@ class Agent:
             self.critic.optimizer.step()
         self.memory.clear() 
 
+class AgentRNN(Agent):
+    def __init__(self, n_actions, HyperParams: HyperParameterConfig) -> None:
+        self.actor = ActorRNN(n_actions, 12, 0.0001)
+        print(self.actor.device)
+        self.device = self.actor.device
+        self.critic = CriticRNN(12, 0.0001)
+        self.memory = MemoryBuffer(100)
+        self.config = HyperParams
+    def reset(self):
+        self.actor.hidden = None
+        self.critic.hidden = None
 #TODO define a clear method from the buffer.
 # Implement the memory buffer
 class MemoryBuffer:

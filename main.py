@@ -14,7 +14,7 @@ from torch import nn
 from tqdm import tqdm
 import env
 from env import SolarEnv
-from models import Agent, HyperParameterConfig
+from models import Agent, HyperParameterConfig, AgentRNN
 if __name__ == '__main__':
     torch.set_default_device('cuda')
     #TODO Use farama Vector env instead
@@ -23,11 +23,11 @@ if __name__ == '__main__':
 
     # env = gym.make('CartPole-v1', num_envs=2)
     # envs = gym.make('SolarEnv-v0')
-    envs_running = 5 #amount of envs running for data collection
+    envs_running = 32 #amount of envs running for data collection
     envs = gym.vector.SyncVectorEnv(
         [lambda: gym.make("SolarEnv-v0") for _ in range(envs_running)]
     )
- 
+
     # Reset the environment to its initial state and receive the initial observation
     observation = envs.reset()
 
@@ -40,14 +40,15 @@ if __name__ == '__main__':
     batch_size = 18000
     torch.set_default_device('cuda')
     params = HyperParameterConfig()
-    agent: Agent = Agent(2, params) #Hold or sell are the ations we will take
+    agent: Agent = AgentRNN(2, params) #Hold or sell are the ations we will take
     agent.memory.batch_size = batch_size
     graphx = []
     graphy = []
-    test_size = 40
+    test_size = 2000
     random.seed(40) #For consistency
-    test_inds = random.sample(range(0, 365), test_size)
+    test_inds = random.sample(range(0, 365*48), test_size)
     testx = []
+    test_tmp = []
     testy = []
     #TODO Test this on a training set of 2017 if possible. Otherwise sample it
     #From data in the current set
@@ -57,20 +58,16 @@ if __name__ == '__main__':
         #When not done. This is an array of 
         #dones
         step = 0
-        while sum(done) < envs_running:
-            
-            # Replace 'your_action' with the action you want to take in the environment (e.g., 0, 1, 2, ...)
-            actions, probs, value = agent.choose_action(observation)
-            
-    
+        while step < 365*48:
             
             if step in test_inds:
                 #Perform calculations without gradients
                 with torch.no_grad():
+                    actions, probs, value = agent.choose_action(observation)
                     next_observation, reward, done,truncated,  _ = envs.step(actions)
-                    testx.append(len(testx) + 1)
-                    testy.append(sum(reward) / envs_running)
+                    test_tmp.append(sum(reward) / envs_running)
             else:
+                actions, probs, value = agent.choose_action(observation)
                 next_observation, reward, done,truncated,  _ = envs.step(actions)
                 for obs, action, prob, val, rew, don in zip(observation, actions, probs, value, reward, done):
                     agent.memory.push( obs, action, prob, val, rew, don)
@@ -91,16 +88,23 @@ if __name__ == '__main__':
 
             # Update the current observation with the next observation
             observation = next_observation
-            
-
+            step += 1
+        if isinstance(agent, AgentRNN):
+            agent.reset() #Clear the hidden states
+        testx.append(episode)
+        testy.append(sum(test_tmp) / len(test_tmp))
+        test_tmp.clear()
+        
+    agent.vectorized_clipped_ppo()
     agent.actor.save_checkpoint()
     agent.critic.save_checkpoint()
     plt.plot(graphx, graphy)
     plt.savefig('train_metrics.pdf', bbox_inches='tight')   
     plt.cla()
     plt.clf()
-    plt.plot(testx, testy)
+    plt.scatter(testx, testy)
     plt.savefig('test_metrics.pdf', bbox_inches='tight')  
     # Close the environment when done
-    print(sum(agent.memory.rewards[-1]))
+    # print(sum(agent.memory.rewards[-1]))
+    print(sum(graphy) / len(graphy))
     envs.close()

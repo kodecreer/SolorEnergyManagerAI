@@ -24,14 +24,14 @@ class SolarEnv(gym.Env):
         data = pd.read_excel('./Solar data_2016.xlsx')
         self.energy_prices = pd.read_excel('Energy Price_2016.xlsx')
         self.energy_prices = self.energy_prices[self.energy_prices["Price hub"].replace(' ', '') == 'Mid C Peak']
-        self.energy_prices = self.energy_prices[2:]#because it has January 30th
+        self.energy_prices = self.energy_prices[1:]#because it has January 30th
         self.energy_dates = self.energy_prices['Trade date'].values
         self.energy_prices = self.energy_prices['Avg price $/MWh'].values
-        
+
         self.energy_step = 0 
         self.energy_buffer = 0
         self.last_date = np.datetime64("2016-01-01T00:00:00.000000000")
-        
+        self.start_date = np.datetime64("2016-01-01T00:00:00.000000000")
 
         # self.fig, self.ax = plt.subplots(2, 2)
         # self.ax[0][0].set_xlabel('Timestep')
@@ -85,20 +85,17 @@ class SolarEnv(gym.Env):
         # self.imp.append(imp)
 
         #Account for weekend
-        current_date = self.energy_dates[self.energy_step]
-       
-        if current_date - self.last_date > 1:
-            self.energy_buffer = current_date - self.last_date
-    
-        if self.energy_buffer <= 0:
-            self.energy_step += 1
-            self.last_date = current_date
-        self.energy_buffer -= 1
+        yearday = self.current_step
+        dayahead = pd.to_datetime( self.energy_dates[self.energy_step+1] )
+        start = pd.to_datetime( self.start_date )
+        if len(self.energy_dates) > self.energy_step + 1:
+            if (dayahead - start).days > yearday / 48:
+                print(dayahead - start)
+                self.energy_step += 1
             
 
 
         WATTAGE_RATE = self.energy_prices[self.energy_step]
-
         kilo_watts = self.get_wattage(vimp, imp)#Lets assum Kilo Watts for now
 
         #Hold the power

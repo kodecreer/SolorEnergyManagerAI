@@ -38,6 +38,7 @@ if __name__ == '__main__':
                 actions = -1
                 try:
                     while actions < 0 or actions > 1:
+                        print(step, envs.current_step)
                         print('Price')
                         #Account for weekend
                         WATTAGE_RATE = envs.energy_prices[envs.energy_step]
@@ -45,7 +46,9 @@ if __name__ == '__main__':
                         print('year, month, day, hour, minute, irradiance, temperature, Solar Zenith Angle, Wind Speed, Relative Humidity, Vmp, Imp')
                         print(observation)
                         actions = int(input("Sell (0) or Hold (1)"))
-                except:
+                except KeyboardInterrupt:
+                    quit()
+                except :
                     actions = 1
                 next_observation, reward, done,truncated,  _ = envs.step(actions)
                 test_tmp.append(reward )
@@ -53,8 +56,10 @@ if __name__ == '__main__':
 
                 # Update the current observation with the next observation
                 observation = next_observation
+            else:
+                envs.step(0) #On hold only
             step += 1
-        envs.step(0) #On hold only
+        
         testx.append(episode)
         testy.append(sum(test_tmp) / len(test_tmp))
        

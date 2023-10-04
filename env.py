@@ -53,7 +53,7 @@ class SolarEnv(gym.Env):
         self.train_sz = len(self.df)-1
         self.action_space = spaces.Discrete(2)
         self.observation_space = spaces.Box(
-            low=0, high=np.inf, shape=(12,), dtype=np.float32
+            low=0, high=np.inf, shape=(13,), dtype=np.float32
         )
         #Key for the AI network
         self.balance = 0
@@ -89,8 +89,7 @@ class SolarEnv(gym.Env):
         dayahead = pd.to_datetime( self.energy_dates[self.energy_step+1] )
         start = pd.to_datetime( self.start_date )
         if len(self.energy_dates) > self.energy_step + 1:
-            if (dayahead - start).days > yearday / 48:
-                print(dayahead - start)
+            if (dayahead - start).days < yearday / 48:
                 self.energy_step += 1
             
 
@@ -129,7 +128,7 @@ class SolarEnv(gym.Env):
         self.rewards.append(self.balance)
         self.current_step += 1
         done = self.current_step >= self.train_sz
-        observation = np.array(self.df.iloc[self.current_step].values)
+        observation = np.append( np.array(self.df.iloc[self.current_step].values), WATTAGE_RATE )
         truncated = False
         #for now we will naively set the reward to the balance...
         #Since that is the key statistic we want to maximize.
@@ -139,10 +138,11 @@ class SolarEnv(gym.Env):
 
     def reset(self, seed=None, options=None):
         self.current_step = 0
+        self.energy_step = 0
         self.actions = []
         self.vimp = []
         self.imp = []
-        observation = (np.array(self.df.iloc[0].values))
+        observation = ( np.append(np.array(self.df.iloc[0].values), self.energy_prices[0]) )
         return observation, {}
 
     def render(self, mode='human'):

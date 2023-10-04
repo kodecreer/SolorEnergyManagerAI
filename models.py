@@ -128,10 +128,10 @@ class CriticRNN(nn.Module):
 
 class Agent:
     def __init__(self, n_actions, HyperParams: HyperParameterConfig) -> None:
-        self.actor = ActorNetwork(n_actions, 12, 0.0001)
+        self.actor = ActorNetwork(n_actions, 13, 0.0001)
         print(self.actor.device)
         self.device = self.actor.device
-        self.critic = CriticNetwork(12, 0.0001)
+        self.critic = CriticNetwork(13, 0.0001)
         self.memory = MemoryBuffer(100)
         self.config = HyperParams
     
@@ -250,10 +250,10 @@ class Agent:
 
 class AgentRNN(Agent):
     def __init__(self, n_actions, HyperParams: HyperParameterConfig) -> None:
-        self.actor = ActorRNN(n_actions, 12, 0.0001)
+        self.actor = ActorRNN(n_actions, 13, 0.0001)
         print(self.actor.device)
         self.device = self.actor.device
-        self.critic = CriticRNN(12, 0.0001)
+        self.critic = CriticRNN(13, 0.0001)
         self.memory = MemoryBuffer(100)
         self.config = HyperParams
     def reset(self):

@@ -3,3 +3,4 @@ torch
 pandas
 gymnasium
 tqdm
+openpyxl

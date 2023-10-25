@@ -20,7 +20,7 @@ if __name__ == '__main__':
     num_episodes = 1
 
     test_size = 100
-    random.seed(40) #For consistency
+    random.seed(41) #For consistency #Seeds 40, 40, 41
     test_inds = random.sample(range(0, 365*48), test_size)
     testx = []
     test_tmp = []
@@ -31,13 +31,17 @@ if __name__ == '__main__':
         #When not done. This is an array of 
         #dones
         step = 0
+        total = 0
         while step < 365 * 48:
             
             if step in test_inds:
                 #Perform calculations without gradients
                 actions = -1
+                total += 1
                 try:
                     while actions < 0 or actions > 1:
+                        print('Total steps')
+                        print(total)
                         print(step, envs.current_step)
                         print('Price')
                         #Account for weekend
@@ -66,6 +70,7 @@ if __name__ == '__main__':
 
     plt.title("Human only with Hold only")
     plt.scatter(testx, testy)
+    print(testx, testy)
     plt.savefig('human_metrics.pdf', bbox_inches='tight')  
     # Close the environment when done
     # print(sum(agent.memory.rewards[-1]))

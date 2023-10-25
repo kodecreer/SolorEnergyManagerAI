@@ -14,7 +14,7 @@ from torch import nn
 from tqdm import tqdm
 import env
 from env import SolarEnv
-from models import Agent, HyperParameterConfig, AgentRNN
+from models import *
 if __name__ == '__main__':
     torch.set_default_device('cuda')
     #TODO Use farama Vector env instead
@@ -23,7 +23,7 @@ if __name__ == '__main__':
 
     # env = gym.make('CartPole-v1', num_envs=2)
     # envs = gym.make('SolarEnv-v0')
-    envs_running = 32 #amount of envs running for data collection
+    envs_running = 1#32 #amount of envs running for data collection
     envs = gym.vector.SyncVectorEnv(
         [lambda: gym.make("SolarEnv-v0") for _ in range(envs_running)]
     )
@@ -37,10 +37,11 @@ if __name__ == '__main__':
     #The lower the number, the slower it goes through all the adata
     log_interval = 1000
     interval = 0
-    batch_size = 18000
+    
     torch.set_default_device('cuda')
     params = HyperParameterConfig()
-    agent: Agent = AgentRNN(2, params) #Hold or sell are the ations we will take
+    agent: Agent = AgentT(2, params) #Hold or sell are the ations we will take
+    batch_size = 18000 if not isinstance(agent, AgentT) else 128 #Transformer is VRAM hungry...
     agent.memory.batch_size = batch_size
     graphx = []
     graphy = []
@@ -71,7 +72,6 @@ if __name__ == '__main__':
                 next_observation, reward, done,truncated,  _ = envs.step(actions)
                 for obs, action, prob, val, rew, don in zip(observation, actions, probs, value, reward, done):
                     agent.memory.push( obs, action, prob, val, rew, don)
-
                 if agent.memory.size() >= agent.memory.batch_size:
                     #If we have a large enough data then start learning
                     print(f'Reward: {sum(reward)/envs_running}')
@@ -89,8 +89,10 @@ if __name__ == '__main__':
             # Update the current observation with the next observation
             observation = next_observation
             step += 1
-        if isinstance(agent, AgentRNN):
+        if isinstance(agent, AgentRNN) or isinstance(agent, ActorCNN):
             agent.reset() #Clear the hidden states
+        
+        
         testx.append(episode)
         testy.append(sum(test_tmp) / len(test_tmp))
         test_tmp.clear()

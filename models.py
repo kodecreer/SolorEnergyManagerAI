@@ -232,13 +232,14 @@ class ActorT(AIModel):
         
         if len(self.memory) > 0:
             mem = torch.stack(self.memory, dim=0)
-            x3 = self.ln2(mem+x3)
-        dist = self.fc(x3)
+            mem = torch.cat((mem, x3), dim=0)
+            x3 = self.ln2(mem)
+        dist = self.fc(x3)[-1]
         dist = Categorical(F.softmax(dist, dim=-1))
         if len(self.memory) + 1 >= self.ctx_len:
             del self.memory[0]
         self.memory.append(x2[-1])
-
+  
         return dist
 
 
@@ -275,8 +276,9 @@ class CriticT(AIModel):
         
         if len(self.memory) > 0:
             mem = torch.stack(self.memory, dim=0)
-            x3 = self.ln2(mem+x3)
-        value = self.fc(x3)
+            mem = torch.cat((mem, x3), dim=0)
+            x3 = self.ln2(mem)
+        value = self.fc(x3)[-1]
         if len(self.memory) + 1 >= self.ctx_len:
             del self.memory[0]
         self.memory.append(x2[-1])

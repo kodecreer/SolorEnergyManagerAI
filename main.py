@@ -23,7 +23,7 @@ if __name__ == '__main__':
 
     # env = gym.make('CartPole-v1', num_envs=2)
     # envs = gym.make('SolarEnv-v0')
-    envs_running = 1#32 #amount of envs running for data collection
+    envs_running = 2#32 #amount of envs running for data collection
     envs = gym.vector.SyncVectorEnv(
         [lambda: gym.make("SolarEnv-v0") for _ in range(envs_running)]
     )
@@ -69,6 +69,7 @@ if __name__ == '__main__':
                     test_tmp.append(sum(reward) / envs_running)
             else:
                 actions, probs, value = agent.choose_action(observation)
+               
                 next_observation, reward, done,truncated,  _ = envs.step(actions)
                 for obs, action, prob, val, rew, don in zip(observation, actions, probs, value, reward, done):
                     agent.memory.push( obs, action, prob, val, rew, don)
@@ -104,7 +105,7 @@ if __name__ == '__main__':
     plt.savefig('train_metrics.pdf', bbox_inches='tight')   
     plt.cla()
     plt.clf()
-    plt.scatter(testx, testy)
+    plt.plot(testx, testy)
     plt.savefig('test_metrics.pdf', bbox_inches='tight')  
     # Close the environment when done
     # print(sum(agent.memory.rewards[-1]))

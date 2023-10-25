@@ -41,7 +41,7 @@ if __name__ == '__main__':
     torch.set_default_device('cuda')
     params = HyperParameterConfig()
     agent: Agent = AgentT(2, params) #Hold or sell are the ations we will take
-    batch_size = 18000 if not isinstance(agent, AgentT) else 128 #Transformer is VRAM hungry...
+    batch_size = 18000 if not isinstance(agent, AgentT) else 724 #Transformer is VRAM hungry...
     agent.memory.batch_size = batch_size
     graphx = []
     graphy = []

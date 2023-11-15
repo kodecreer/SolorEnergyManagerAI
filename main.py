@@ -32,7 +32,7 @@ if __name__ == '__main__':
     observation = envs.reset()
 
     # Define the number of episodes (or time steps) you want to run the environment
-    num_episodes = 10
+    num_episodes = 0
     #How often to update the graph.
     #The lower the number, the slower it goes through all the adata
     log_interval = 1000
@@ -41,7 +41,7 @@ if __name__ == '__main__':
     torch.set_default_device('cuda')
     params = HyperParameterConfig()
     agent: Agent = AgentT(2, params) #Hold or sell are the ations we will take
-    batch_size = 18000 if not isinstance(agent, AgentT) else 724 #Transformer is VRAM hungry...
+    batch_size = 120 if not isinstance(agent, AgentT) else 120 #Transformer is VRAM hungry...
     agent.memory.batch_size = batch_size
     graphx = []
     graphy = []
@@ -98,16 +98,16 @@ if __name__ == '__main__':
         testy.append(sum(test_tmp) / len(test_tmp))
         test_tmp.clear()
         
-    agent.vectorized_clipped_ppo()
     agent.actor.save_checkpoint()
     agent.critic.save_checkpoint()
     plt.plot(graphx, graphy)
     plt.savefig('train_metrics.pdf', bbox_inches='tight')   
     plt.cla()
     plt.clf()
+    with open('./results.txt', 'w') as f:
+        f.writelines(testy)
     plt.plot(testx, testy)
     plt.savefig('test_metrics.pdf', bbox_inches='tight')  
     # Close the environment when done
     # print(sum(agent.memory.rewards[-1]))
-    print(sum(graphy) / len(graphy))
     envs.close()

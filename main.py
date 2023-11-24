@@ -45,7 +45,7 @@ if __name__ == '__main__':
     agent.memory.batch_size = batch_size
     graphx = []
     graphy = []
-    test_size = 2000
+    test_size = int(365 * 48 * 0.2)
     random.seed(40) #For consistency
     test_inds = random.sample(range(0, 365*48), test_size)
     testx = []
@@ -94,8 +94,8 @@ if __name__ == '__main__':
             agent.reset() #Clear the hidden states
         
         
-        testx.append(episode)
-        testy.append(sum(test_tmp) / len(test_tmp))
+
+        testy = test_tmp
         test_tmp.clear()
         
     agent.actor.save_checkpoint()
@@ -105,8 +105,8 @@ if __name__ == '__main__':
     plt.cla()
     plt.clf()
     with open('./results.txt', 'w') as f:
-        f.writelines(testy)
-    plt.plot(testx, testy)
+        f.writelines(str(testy))
+    plt.plot(range(0, len(testy)), testy)
     plt.savefig('test_metrics.pdf', bbox_inches='tight')  
     # Close the environment when done
     # print(sum(agent.memory.rewards[-1]))

@@ -88,14 +88,16 @@ class SolarEnv(gym.Env):
         yearday = self.current_step
         dayahead = pd.to_datetime( self.energy_dates[self.energy_step+1] )
         start = pd.to_datetime( self.start_date )
-        if len(self.energy_dates) > self.energy_step + 1:
-            if (dayahead - start).days < yearday / 48:
-                self.energy_step += 1
+        # if len(self.energy_dates) > self.energy_step + 1:
+        day_diff = (dayahead - start).days
+        if day_diff  < yearday / 48:
+            start = dayahead
+            self.energy_step += 1
             
 
 
         WATTAGE_RATE = self.energy_prices[self.energy_step]
-        kilo_watts = self.get_wattage(vimp, imp)#Lets assum Kilo Watts for now
+        kilo_watts = self.get_wattage(vimp, imp)/1000#Lets assum Kilo Watts for now
 
         #Hold the power
         if action == 1 and len(self.actions) > 0:
@@ -117,7 +119,7 @@ class SolarEnv(gym.Env):
             
             if self.wattage_balance > 0:
                 #Assuming it's a discount back to thep ower grid
-                self.balance += self.wattage_balance * WATTAGE_RATE * 0.8 
+                self.balance += self.wattage_balance * WATTAGE_RATE 
                 #clear the wattages
                 self.wattage_balance = 0
             else:

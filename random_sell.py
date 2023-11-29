@@ -31,17 +31,17 @@ if __name__ == '__main__':
     #https://gymnasium.farama.org/api/experimental/vector/
 
     # env = gym.make('CartPole-v1', num_envs=2)
-    envs = gym.make('SolarEnv-v0')
-    # envs_running = 1 #amount of envs running for data collection
-    # envs = gym.vector.SyncVectorEnv(
-    #     [lambda: gym.make("SolarEnv-v0") for _ in range(envs_running)]
-    # )
+    # envs = gym.make('SolarEnv-v0')
+    envs_running = 1 #amount of envs running for data collection
+    envs = gym.vector.SyncVectorEnv(
+        [lambda: gym.make("SolarEnv-v0") for _ in range(envs_running)]
+    )
 
     # Reset the environment to its initial state and receive the initial observation
     observation = envs.reset()
 
     # Define the number of episodes (or time steps) you want to run the environment
-    num_episodes = 100
+    num_episodes = 1
     #How often to update the graph.
     #The lower the number, the slower it goes through all the adata
     log_interval = 1000
@@ -56,7 +56,7 @@ if __name__ == '__main__':
     graphy = []
 
     test_size = int(365 * 48 * 0.2)
-    random.seed(40) #For consistency
+    random.seed(55) #For consistency
     test_inds = random.sample(range(0, 365*48), test_size)
     
 
@@ -66,30 +66,31 @@ if __name__ == '__main__':
 
     train_acitons = []
     train_rewards = []
-    is_random = True
-    for episode in tqdm(range(num_episodes)):
+    is_random = False
+    loop = tqdm(range(num_episodes))
+    for episode in loop:
         observation, _ = envs.reset()
         done = False
         #When not done. This is an array of 
         #dones
         step = 0
-        while step < 365*48:
+        while not done:
             if is_random:
-                actions = random.randint(1, 2) 
+                actions = [ random.randint(1, 2) for x in range(envs_running)]
             else:
-                actions = 2 
+                actions = [2 for _ in range(envs_running)]
             if step in test_inds:
                 #Perform calculations without gradients
                 with torch.no_grad():
                     next_observation, reward, done,truncated,  _ = envs.step(actions)
-                    test_tmp.append(reward)
-                    test_actions.append(actions)
+                    test_tmp.append(sum(reward)/len(reward))
+                    # test_actions.append(actions)
             else:
 
                 next_observation, reward, done,truncated,  _ = envs.step(actions)
 
-                train_acitons.append(actions)
-                train_rewards.append(reward)
+                # train_acitons.append(actions)
+                # train_rewards.append(reward)
 
             # Update the current observation with the next observation
             observation = next_observation

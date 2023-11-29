@@ -53,15 +53,17 @@ class SolarEnv(gym.Env):
         self.train_sz = len(self.df)-1
         self.action_space = spaces.Discrete(2)
         self.observation_space = spaces.Box(
-            low=0, high=np.inf, shape=(13,), dtype=np.float32
+            low=0, high=np.inf, shape=(14,), dtype=np.float32
         )
         #Key for the AI network
         self.balance = 0
         self.wattage_balance = 0
-        self.power_daily = 866 / 31
+        #Smart home manager, smart home speaker , Electric vehicle charging
+        self.power_daily = (25/12 + 26/12 + 353.3) / 31 
         self.power_sub = self.power_daily / 48 #Kilowatts to substract from wattage_balance per time step
-        self.carbon_punishment = 5
+        self.carbon_punishment = 10
         self.current_step = 0
+        self.utility_rate = 35.0 #Base on san francisco adjust for location
 
         self.hour = 1
         self.vimp = []
@@ -69,8 +71,9 @@ class SolarEnv(gym.Env):
         self.actions = []
         self.rewards = []
   
-    def calc_reward(self, last_balance):
-        return self.balance - last_balance
+    def calc_reward(self, last_balance, aux=0):
+        reward = self.balance - last_balance
+        return reward
         
     def get_wattage(self, vmp, imp):
         pmax = vmp * imp
@@ -99,39 +102,43 @@ class SolarEnv(gym.Env):
         WATTAGE_RATE = self.energy_prices[self.energy_step]
         kilo_watts = self.get_wattage(vimp, imp)/1000#Lets assum Kilo Watts for now
 
-        #Hold the power
-        if action == 1 and len(self.actions) > 0:
+        #Hold the power, it will force sell
+        aux = 0
+        if action == 1:
             #Add it to the balance
             self.wattage_balance += kilo_watts  #I am assuming the grid would only buy at discounts
             #subtract the amount of energy consumed
-            self.wattage_balance -= self.power_sub 
-            if self.wattage_balance < 0:
-                #Subtract from the balance
-                self.balance -= abs(self.wattage_balance * WATTAGE_RATE) * self.carbon_punishment
+            # self.wattage_balance -= self.power_sub 
+            # if self.wattage_balance < 0:
+            #     #Subtract from the balance
+            #     self.balance -= abs(self.wattage_balance * self.utility_rate) #* self.carbon_punishment
+            #     self.wattage_balance = 0
+
             self.actions.append(action)
         #Sell it back to the grid
         #First subtract the wattage consumed from the balane
         #Then add it back toe the balance and sell the excess
         #You get no money for selling money you don't have
         else:
-            self.wattage_balance -= self.power_sub
+            # self.wattage_balance -= self.power_sub
             self.wattage_balance += kilo_watts
             
             if self.wattage_balance > 0:
                 #Assuming it's a discount back to thep ower grid
                 self.balance += self.wattage_balance * WATTAGE_RATE 
-                #clear the wattages
-                self.wattage_balance = 0
-            else:
-                #Subtract from the balance
-                self.balance -= abs(self.wattage_balance * WATTAGE_RATE) * self.carbon_punishment
-                self.wattage_balance = 0
+            # else:
+            #     # Whatver we have, buy the remaining eletricity needed
+            #     self.balance -= abs(self.wattage_balance * self.utility_rate) #* self.carbon_punishment
+            self.wattage_balance = 0
             self.actions.append(action)
         self.rewards.append(self.balance)
         self.current_step += 1
         done = self.current_step >= self.train_sz
         observation = np.append( np.array(self.df.iloc[self.current_step].values), WATTAGE_RATE )
-        truncated = False
+        observation = np.append( observation, self.wattage_balance )
+        truncated = done
+        if done:
+            print(f'Balance: ${self.balance/100:.2f}')
         #for now we will naively set the reward to the balance...
         #Since that is the key statistic we want to maximize.
         #May need to consider something else later
@@ -141,10 +148,12 @@ class SolarEnv(gym.Env):
     def reset(self, seed=None, options=None):
         self.current_step = 0
         self.energy_step = 0
+        self.balance = 0
         self.actions = []
         self.vimp = []
         self.imp = []
-        observation = ( np.append(np.array(self.df.iloc[0].values), self.energy_prices[0]) )
+        observation =  np.append(np.array(self.df.iloc[0].values), self.energy_prices[0])
+        observation =  ( np.append(observation, self.wattage_balance)) 
         return observation, {}
 
     def render(self, mode='human'):

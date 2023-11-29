@@ -13,7 +13,7 @@ class HyperParameterConfig():
     clip_epsilon = 0.2
     value_coeff = 0.5
     entropy_coeff = 0.01
-    learning_rate = 0.1
+    learning_rate = 0.0001
     #For GAE
     gamma = 0.99
     gae_lambda = 0.95
@@ -197,101 +197,108 @@ class PositionalEncoding(nn.Module):
         x = x + self.pe[:x.size(0)]
         return self.dropout(x)
 class ActorT(AIModel):
-    def __init__(self, n_actions, input_dims, alpha,fc1_dims=256, fc2_dims=256, num_heads=2, chkpt_dir='tmp'):
+    def __init__(self, n_actions, input_dims, alpha,fc1_dims=1024, fc2_dims=1024, num_heads=4, chkpt_dir='tmp'):
         super(ActorT, self).__init__(alpha)
 
         self.checkpoint_file = os.path.join(chkpt_dir, 'actor_torch_ppo.mdl')
         self.actor = nn.Sequential(
-            nn.Linear(input_dims, fc1_dims),
+            nn.Linear(fc2_dims, fc1_dims),
             nn.ReLU(),
             nn.Dropout(0.2),
             nn.Linear(fc1_dims, fc2_dims),
             nn.ReLU(),
             nn.Dropout(0.2),
-            nn.Linear(fc2_dims, n_actions)
+            nn.Linear(fc2_dims, fc2_dims)
         ) #Feed forward
-        self.pos_shape = nn.Linear(input_dims, input_dims*2)
-        self.reform = nn.Linear(input_dims*2, n_actions)
-        self.pos = PositionalEncoding(input_dims*2)
-        self.ln1 = nn.LayerNorm(n_actions) #Layer norm 1
-        self.attn = nn.MultiheadAttention(n_actions, num_heads )
-        self.ln2  = nn.LayerNorm(n_actions)
-        self.fc = nn.Linear(n_actions, n_actions, bias=False)#Final layer to emulate diagram
+        self.pos_shape = nn.Linear(input_dims, input_dims*20)
+        self.reform = nn.Linear(input_dims*20, fc2_dims)
+        self.pos = PositionalEncoding(input_dims*20)
+        self.ln1 = nn.LayerNorm(fc2_dims) #Layer norm 1
+        self.attn = nn.MultiheadAttention(fc2_dims, num_heads )
+        self.ln2  = nn.LayerNorm(fc2_dims)
+        self.fc = nn.Linear(fc2_dims, n_actions, bias=False)#Final layer to emulate diagram
         self.memory = [] #Keep a memory context for future use and generate auto-regressively
-        self.ctx_len = 32
+        self.ctx_len = 64
         self.init()
 
 
     def forward(self, state):
         obs = state
-        pos =  self.pos(self.pos_shape(obs)) 
-        pos = self.reform(pos)
-        x1 = self.actor(obs) * pos
-        x2, _ = self.attn(x1, x1, x1)
-        x3 = self.ln1(x1 + x2)
-        
         if len(self.memory) > 0:
-            mem = torch.stack(self.memory, dim=0)
-            mem = torch.cat((mem, x3), dim=0)
-            x3 = self.ln2(mem)
-        dist = self.fc(x3)[-1]
-        dist = Categorical(F.softmax(dist, dim=-1))
+            mem = torch.from_numpy(np.array(self.memory)).to(self.device)
+            mem = torch.cat((mem, obs.unsqueeze(0)), dim=0)
+            obs = mem
+
         if len(self.memory) + 1 >= self.ctx_len:
             del self.memory[0]
-        self.memory.append(x2[-1])
+        self.memory.append(state.cpu().numpy())
+        pos =  self.pos(self.pos_shape(obs)) 
+        pos = self.reform(pos) #Act as similar to the embedding
+        x2, _ = self.attn(pos, pos, pos)
+        x2 = self.ln1(pos + x2)
+        x1 = self.actor(x2) * pos
+        
+        x3 = self.ln2(x1 + x2)
+        dist = self.fc(x3)[-1]
+        dist = Categorical(F.softmax(dist, dim=-1))
   
         return dist
 
 
 class CriticT(AIModel):
-    def __init__(self, input_dims, alpha, fc1_dims=256, fc2_dims=256, num_heads=2,
+    def __init__(self, input_dims, alpha, fc1_dims=1024, fc2_dims=1024, num_heads=4,
             chkpt_dir='tmp'):
         super(CriticT, self).__init__(alpha)
-        self.actor = nn.Sequential(
-            nn.Linear(input_dims, fc1_dims),
+        self.critic = nn.Sequential(
+            nn.Linear(fc2_dims, fc1_dims),
             nn.ReLU(),
             nn.Dropout(0.2),
             nn.Linear(fc1_dims, fc2_dims),
            
         ) #Feed forward
-        self.pos_shape = nn.Linear(input_dims, input_dims*2)
-        self.reform = nn.Linear(input_dims*2, fc2_dims)
-        self.pos = PositionalEncoding(input_dims*2)
+        self.pos_shape = nn.Linear(input_dims, input_dims*20)
+        self.reform = nn.Linear(input_dims*20, fc2_dims)
+        self.pos = PositionalEncoding(input_dims*20)
         self.ln1 = nn.LayerNorm(fc2_dims) #Layer norm 1
         self.attn = nn.MultiheadAttention(fc2_dims, num_heads )
         self.ln2  = nn.LayerNorm(fc2_dims)
         self.fc = nn.Linear(fc2_dims, 1, bias=False)#Final layer to emulate diagram
         self.memory = [] #Keep a memory context for future use and generate auto-regressively
-        self.ctx_len = 32
+        self.ctx_len = 64
         self.init()
 
 
     def forward(self, state):
         obs = state
-        pos =  self.pos(self.pos_shape(obs)) 
-        pos = self.reform(pos)
-        x1 = self.actor(obs) * pos
-        x2, _ = self.attn(x1, x1, x1)
-        x3 = self.ln1(x1 + x2)
-        
         if len(self.memory) > 0:
-            mem = torch.stack(self.memory, dim=0)
-            mem = torch.cat((mem, x3), dim=0)
-            x3 = self.ln2(mem)
-        value = self.fc(x3)[-1]
+            mem = torch.from_numpy(np.array(self.memory)).to(self.device)
+            mem = torch.cat((mem, obs.unsqueeze(0)), dim=0)
+            obs = mem
+
         if len(self.memory) + 1 >= self.ctx_len:
             del self.memory[0]
-        self.memory.append(x2[-1])
+        self.memory.append(state.cpu().numpy())
+        pos =  self.pos(self.pos_shape(obs)) 
+        pos = self.reform(pos) #Act as similar to the embedding
+        x2, _ = self.attn(pos, pos, pos)
+        x2 = self.ln1(pos + x2)
+        x1 = self.critic(x2) * pos
+        
+        x3 = self.ln2(x1 + x2)
+        
+        
+        value = self.fc(x3)[-1]
+        
 
         return value
     
 
 class Agent:
     def __init__(self, n_actions, HyperParams: HyperParameterConfig) -> None:
-        self.actor = ActorNetwork(n_actions, 13, 0.0001)
+        self.actor = ActorNetwork(n_actions, 14, 0.0001)
         print(self.actor.device)
         self.device = self.actor.device
-        self.critic = CriticNetwork(13, 0.0001)
+        self.critic = CriticNetwork(14, 0.0001)
         self.memory = MemoryBuffer(100)
         self.config = HyperParams
     
@@ -413,10 +420,10 @@ class Agent:
 
 class AgentRNN(Agent):
     def __init__(self, n_actions, HyperParams: HyperParameterConfig) -> None:
-        self.actor = ActorRNN(n_actions, 13, 0.0001)
+        self.actor = ActorRNN(n_actions, 14, 0.0001)
         print(self.actor.device)
         self.device = self.actor.device
-        self.critic = CriticRNN(13, 0.0001)
+        self.critic = CriticRNN(14, 0.0001)
         self.memory = MemoryBuffer(100)
         self.config = HyperParams
     def reset(self):
@@ -424,10 +431,10 @@ class AgentRNN(Agent):
         self.critic.hidden = None
 class AgentCNN(Agent):
     def __init__(self, n_actions, HyperParams: HyperParameterConfig) -> None:
-        self.actor = ActorCNN(n_actions, 13, 0.0001)
+        self.actor = ActorCNN(n_actions, 14, 0.0001)
         print(self.actor.device)
         self.device = self.actor.device
-        self.critic = CriticCNN(13, 0.0001)
+        self.critic = CriticCNN(14, 0.0001)
         self.memory = MemoryBuffer(100)
         self.config = HyperParams
     def reset(self):
@@ -435,10 +442,10 @@ class AgentCNN(Agent):
         self.critic.hidden = None
 class AgentT(Agent):
     def __init__(self, n_actions, HyperParams: HyperParameterConfig) -> None:
-        self.actor = ActorT(n_actions, 13, 0.0001)
+        self.actor = ActorT(n_actions, 14, 0.00001)
         print(self.actor.device)
         self.device = self.actor.device
-        self.critic = CriticT(13, 0.0001)
+        self.critic = CriticT(14, 0.00001)
         self.memory = MemoryBuffer(100)
         self.config = HyperParams
     def vectorized_clipped_ppo(self):

@@ -23,7 +23,7 @@ if __name__ == '__main__':
 
     # env = gym.make('CartPole-v1', num_envs=2)
     # envs = gym.make('SolarEnv-v0')
-    envs_running = 2#32 #amount of envs running for data collection
+    envs_running = 1#32 #amount of envs running for data collection
     envs = gym.vector.SyncVectorEnv(
         [lambda: gym.make("SolarEnv-v0") for _ in range(envs_running)]
     )
@@ -32,7 +32,7 @@ if __name__ == '__main__':
     observation = envs.reset()
 
     # Define the number of episodes (or time steps) you want to run the environment
-    num_episodes = 0
+    num_episodes = 5
     #How often to update the graph.
     #The lower the number, the slower it goes through all the adata
     log_interval = 1000
@@ -45,21 +45,25 @@ if __name__ == '__main__':
     agent.memory.batch_size = batch_size
     graphx = []
     graphy = []
-    test_size = int(365 * 48 * 0.2)
-    random.seed(40) #For consistency
+    test_size = int(365 * 48 * 0.25)
+    random.seed(55) #For consistency
     test_inds = random.sample(range(0, 365*48), test_size)
     testx = []
     test_tmp = []
     testy = []
     #TODO Test this on a training set of 2017 if possible. Otherwise sample it
     #From data in the current set
-    for episode in tqdm(range(num_episodes)):
+    loop = tqdm(range(num_episodes))
+    for episode in loop:
         observation, _ = envs.reset()
         done = [False]
         #When not done. This is an array of 
         #dones
+
+        eval_val = 0
         step = 0
-        while step < 365*48:
+        train_val = 0
+        while sum(done) < envs_running:
             
             if step in test_inds:
                 #Perform calculations without gradients
@@ -67,18 +71,25 @@ if __name__ == '__main__':
                     actions, probs, value = agent.choose_action(observation)
                     next_observation, reward, done,truncated,  _ = envs.step(actions)
                     test_tmp.append(sum(reward) / envs_running)
+                    eval_val = sum(reward) / envs_running
             else:
                 actions, probs, value = agent.choose_action(observation)
                
                 next_observation, reward, done,truncated,  _ = envs.step(actions)
+                #Try Spare sell rewards
+                bias = 2
+                i = 0
+                train_val = sum(reward)/envs_running
                 for obs, action, prob, val, rew, don in zip(observation, actions, probs, value, reward, done):
-                    agent.memory.push( obs, action, prob, val, rew, don)
+                    # if action == 2 or i % bias == 0:
+                        agent.memory.push( obs, action, prob, val, rew, don)
+                    # else:
+                    #     i+= 1
                 if agent.memory.size() >= agent.memory.batch_size:
                     #If we have a large enough data then start learning
-                    print(f'Reward: {sum(reward)/envs_running}')
-                    print(f"Learning ...")
-                    agent.vectorized_clipped_ppo()
                     
+                    agent.vectorized_clipped_ppo()
+                   
                 if interval % log_interval == 0:
                     # You can render the environment at each step if you want to visualize the progress
                     # envs.render()
@@ -86,21 +97,22 @@ if __name__ == '__main__':
                     graphy.append(sum(reward) / envs_running)
                     # interval = 0
                     interval += 1
-
+            loop.set_description(f"Reward Average: {train_val} Eval: {eval_val}") 
             # Update the current observation with the next observation
             observation = next_observation
             step += 1
+
         if isinstance(agent, AgentRNN) or isinstance(agent, ActorCNN):
             agent.reset() #Clear the hidden states
         
-        
+        graphy.append(sum(test_tmp) / len(test_tmp))
 
-        testy = test_tmp
+        testy = test_tmp.copy()
         test_tmp.clear()
         
     agent.actor.save_checkpoint()
     agent.critic.save_checkpoint()
-    plt.plot(graphx, graphy)
+    plt.plot(range(0, len(graphy)), graphy)
     plt.savefig('train_metrics.pdf', bbox_inches='tight')   
     plt.cla()
     plt.clf()

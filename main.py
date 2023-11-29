@@ -27,7 +27,7 @@ if __name__ == '__main__':
     observation = envs.reset()
 
     # Define the number of episodes (or time steps) you want to run the environment
-    num_episodes = 10
+    num_episodes = 1
     #How often to update the graph.
     #The lower the number, the slower it goes through all the adata
     log_interval = 1000
@@ -77,7 +77,10 @@ if __name__ == '__main__':
                     actions, probs, value = agent.choose_action(observation)
                     next_observation, reward, done,truncated,  _ = envs.step(actions)
                     test_tmp.append(sum(reward) / envs_running)
-                    testx.append(observation[-2])#Get in the price
+                    obs = []
+                    for ob in observation:
+                        obs.append(ob[-2])
+                    testx.append(obs)#Get in the price
                     eval_val = sum(reward) / envs_running
                     balance += sum(reward)
             else:
@@ -142,7 +145,10 @@ if __name__ == '__main__':
                 next_observation, reward, done,truncated,  _ = envs.step(actions)
                 eval_val = sum(reward) / envs_running
                 egains.append(eval_val)
-                eprices.append(observation[-2])
+                obs = []
+                for ob in observation:
+                    obs.append(ob[-2])
+                eprices.append(obs)#Get in the price
         else:
 
             actions = [1 for _ in range(envs_running)]  

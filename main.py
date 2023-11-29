@@ -15,14 +15,9 @@ from tqdm import tqdm
 import env
 from env import SolarEnv
 from models import *
+import sys
 if __name__ == '__main__':
     torch.set_default_device('cuda')
-    #TODO Use farama Vector env instead
-    # Create version of Solar Env that's compatible with the spec here
-    #https://gymnasium.farama.org/api/experimental/vector/
-
-    # env = gym.make('CartPole-v1', num_envs=2)
-    # envs = gym.make('SolarEnv-v0')
     envs_running = 1#32 #amount of envs running for data collection
     envs = gym.vector.SyncVectorEnv(
         [lambda: gym.make("SolarEnv-v0") for _ in range(envs_running)]
@@ -32,7 +27,7 @@ if __name__ == '__main__':
     observation = envs.reset()
 
     # Define the number of episodes (or time steps) you want to run the environment
-    num_episodes = 5
+    num_episodes = 10
     #How often to update the graph.
     #The lower the number, the slower it goes through all the adata
     log_interval = 1000
@@ -40,14 +35,24 @@ if __name__ == '__main__':
     
     torch.set_default_device('cuda')
     params = HyperParameterConfig()
-    agent: Agent = AgentT(2, params) #Hold or sell are the ations we will take
-    batch_size = 120 if not isinstance(agent, AgentT) else 120 #Transformer is VRAM hungry...
+    #Set the model to make it easy to set model
+    arg_val = 1 if len(sys.argv) <= 1 else sys.argv[1]
+    if arg_val == 1:
+        agent = Agent(2, params)
+    elif arg_val == 2:
+        agent = AgentRNN(2, params)
+    elif arg_val == 3:
+        agent = AgentT(2, params)
+    elif arg_val == 4:
+        agent = AgentCNN
+    batch_size = 120  #Transformer is VRAM hungry...
     agent.memory.batch_size = batch_size
-    graphx = []
+    #Per episode
     graphy = []
     test_size = int(365 * 48 * 0.25)
     random.seed(55) #For consistency
     test_inds = random.sample(range(0, 365*48), test_size)
+    #Per timestep
     testx = []
     test_tmp = []
     testy = []
@@ -63,6 +68,7 @@ if __name__ == '__main__':
         eval_val = 0
         step = 0
         train_val = 0
+        balance = 0
         while sum(done) < envs_running:
             
             if step in test_inds:
@@ -71,7 +77,9 @@ if __name__ == '__main__':
                     actions, probs, value = agent.choose_action(observation)
                     next_observation, reward, done,truncated,  _ = envs.step(actions)
                     test_tmp.append(sum(reward) / envs_running)
+                    testx.append(observation[-2])#Get in the price
                     eval_val = sum(reward) / envs_running
+                    balance += sum(reward)
             else:
                 actions, probs, value = agent.choose_action(observation)
                
@@ -80,6 +88,7 @@ if __name__ == '__main__':
                 bias = 2
                 i = 0
                 train_val = sum(reward)/envs_running
+                balance += sum(reward)
                 for obs, action, prob, val, rew, don in zip(observation, actions, probs, value, reward, done):
                     # if action == 2 or i % bias == 0:
                         agent.memory.push( obs, action, prob, val, rew, don)
@@ -90,13 +99,6 @@ if __name__ == '__main__':
                     
                     agent.vectorized_clipped_ppo()
                    
-                if interval % log_interval == 0:
-                    # You can render the environment at each step if you want to visualize the progress
-                    # envs.render()
-                    graphx.append(interval)
-                    graphy.append(sum(reward) / envs_running)
-                    # interval = 0
-                    interval += 1
             loop.set_description(f"Reward Average: {train_val} Eval: {eval_val}") 
             # Update the current observation with the next observation
             observation = next_observation
@@ -106,20 +108,57 @@ if __name__ == '__main__':
             agent.reset() #Clear the hidden states
         
         graphy.append(sum(test_tmp) / len(test_tmp))
-
-        testy = test_tmp.copy()
+        testy.extend(test_tmp.copy())
         test_tmp.clear()
         
-    agent.actor.save_checkpoint()
-    agent.critic.save_checkpoint()
-    plt.plot(range(0, len(graphy)), graphy)
-    plt.savefig('train_metrics.pdf', bbox_inches='tight')   
-    plt.cla()
-    plt.clf()
-    with open('./results.txt', 'w') as f:
+    
+    with open(f'./metrics/per_episode_{arg_val}.txt', 'w') as f:
+        f.writelines(str(graphy))
+
+    with open(f'./metrics/per_timestep_{arg_val}.txt', 'w') as f:
         f.writelines(str(testy))
-    plt.plot(range(0, len(testy)), testy)
-    plt.savefig('test_metrics.pdf', bbox_inches='tight')  
+
+    with open(f'./metrics/balance_{arg_val}.txt', 'w') as f:
+        f.writelines(str(balance))
     # Close the environment when done
     # print(sum(agent.memory.rewards[-1]))
+
+    #Run a test run
+    observation, _ = envs.reset()
+
+    done = [False]
+    eprices = []
+    egains = []
+    #When not done. This is an array of 
+    #done
+    eval_val = 0
+    balance = 0
+    while sum(done) < envs_running:
+        
+        if step in test_inds:
+            #Perform calculations without gradients
+            with torch.no_grad():
+                actions, probs, value = agent.choose_action(observation)
+                next_observation, reward, done,truncated,  _ = envs.step(actions)
+                eval_val = sum(reward) / envs_running
+                egains.append(eval_val)
+                eprices.append(observation[-2])
+        else:
+
+            actions = [1 for _ in range(envs_running)]  
+            next_observation, reward, done,truncated,  _ = envs.step(actions)
+        loop.set_description(f"Reward Average: {train_val} Eval: {eval_val}") 
+        # Update the current observation with the next observation
+        observation = next_observation
+        step += 1
+    with open(f'./metrics/egains_{arg_val}.txt', 'w') as f:
+        f.writelines(str(egains))
+
+    with open(f'./metrics/eprices_{arg_val}.txt', 'w') as f:
+        f.writelines(str(eprices))
+
+    with open(f'./metrics/ebalance{arg_val}.txt', 'w') as f:
+        f.writelines(str(balance))
+    
     envs.close()
+

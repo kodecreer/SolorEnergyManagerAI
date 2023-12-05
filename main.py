@@ -72,6 +72,7 @@ if __name__ == '__main__':
         step = 0
         train_val = 0
         balance = 0
+        balences = []
         while sum(done) < envs_running:
             
             if step in test_inds:
@@ -106,6 +107,8 @@ if __name__ == '__main__':
                     agent.vectorized_clipped_ppo()
                    
             loop.set_description(f"Reward Average: {train_val} Eval: {eval_val}") 
+            balences.append(balance)
+            balence = 0
             # Update the current observation with the next observation
             observation = next_observation
             step += 1
@@ -125,7 +128,7 @@ if __name__ == '__main__':
         f.writelines(str(testy))
 
     with open(f'./metrics/balance_{arg_val}.txt', 'w') as f:
-        f.writelines(str(balance))
+        f.writelines(str(str(balences)))
     # Close the environment when done
     # print(sum(agent.memory.rewards[-1]))
 

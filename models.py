@@ -35,7 +35,7 @@ class AIModel(nn.Module):
         self.alpha = alpha
     def init(self):
         self.optimizer = optim.Adam(self.parameters(), lr=self.alpha)
-        self.step_lr = optim.lr_scheduler.CosineAnnealingLR(self.optimizer, self.alpha, self.alpha*0.1, 100000)
+        # self.step_lr = optim.lr_scheduler.CosineAnnealingLR(self.optimizer, self.alpha, self.alpha*0.1)
 
     def save_checkpoint(self):
         torch.save(self.state_dict(), self.checkpoint_file)
@@ -359,8 +359,8 @@ class Agent:
                 total_loss.backward()
                 self.actor.optimizer.step()
                 self.critic.optimizer.step()
-                self.actor.step_lr.step()
-                self.critic.step_lr.step()
+                # self.actor.step_lr.step()
+                # self.critic.step_lr.step()
         self.memory.clear() 
     def vectorized_clipped_ppo(self):
         #Run PPO Algorithm
@@ -419,8 +419,8 @@ class Agent:
             total_loss.backward()
             self.actor.optimizer.step()
             self.critic.optimizer.step()
-            self.actor.step_lr.step()
-            self.critic.step_lr.step()
+            # self.actor.step_lr.step()
+            # self.critic.step_lr.step()
             if isinstance(self.actor, ActorT):
                 self.actor.memory.clear()
                 self.critic.memory.clear()

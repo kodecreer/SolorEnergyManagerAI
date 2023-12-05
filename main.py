@@ -27,7 +27,7 @@ if __name__ == '__main__':
     observation = envs.reset()
 
     # Define the number of episodes (or time steps) you want to run the environment
-    num_episodes = 1
+    num_episodes = 5
     #How often to update the graph.
     #The lower the number, the slower it goes through all the adata
     log_interval = 1000
@@ -36,7 +36,9 @@ if __name__ == '__main__':
     torch.set_default_device('cuda')
     params = HyperParameterConfig()
     #Set the model to make it easy to set model
-    arg_val = 1 if len(sys.argv) <= 1 else sys.argv[1]
+    arg_val = 1 if len(sys.argv) <= 1 else int( sys.argv[1] )
+    agent = None
+    print(arg_val)
     if arg_val == 1:
         agent = Agent(2, params)
     elif arg_val == 2:
@@ -45,6 +47,7 @@ if __name__ == '__main__':
         agent = AgentT(2, params)
     elif arg_val == 4:
         agent = AgentCNN
+    print(agent)
     batch_size = 120  #Transformer is VRAM hungry...
     agent.memory.batch_size = batch_size
     #Per episode
@@ -82,7 +85,7 @@ if __name__ == '__main__':
                         obs.append(ob[-2])
                     testx.append(obs)#Get in the price
                     eval_val = sum(reward) / envs_running
-                    balance += sum(reward)
+                    balance += sum(reward) 
             else:
                 actions, probs, value = agent.choose_action(observation)
                

@@ -72,7 +72,7 @@ class SolarEnv(gym.Env):
         self.rewards = []
   
     def calc_reward(self, last_balance, aux=0):
-        reward = self.balance - last_balance
+        reward = (self.balance - last_balance)*1000
         return reward
         
     def get_wattage(self, vmp, imp):
@@ -99,7 +99,7 @@ class SolarEnv(gym.Env):
             
 
 
-        WATTAGE_RATE = self.energy_prices[self.energy_step]
+        WATTAGE_RATE = self.energy_prices[self.energy_step] / 1000
         kilo_watts = self.get_wattage(vimp, imp)/1000#Lets assum Kilo Watts for now
 
         #Hold the power, it will force sell
@@ -138,7 +138,7 @@ class SolarEnv(gym.Env):
         observation = np.append( observation, self.wattage_balance )
         truncated = done
         if done:
-            print(f'Balance: ${self.balance/100:.2f}')
+            print(f'Balance: ${self.balance:.2f}')
         #for now we will naively set the reward to the balance...
         #Since that is the key statistic we want to maximize.
         #May need to consider something else later

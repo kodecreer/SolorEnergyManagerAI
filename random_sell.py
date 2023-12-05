@@ -48,68 +48,74 @@ if __name__ == '__main__':
     interval = 0
     
     torch.set_default_device('cuda')
-    params = HyperParameterConfig()
-    agent: Agent = AgentT(2, params) #Hold or sell are the ations we will take
-    batch_size = 120 if not isinstance(agent, AgentT) else 120 #Transformer is VRAM hungry...
-    agent.memory.batch_size = batch_size
-    graphx = []
-    graphy = []
 
-    test_size = int(365 * 48 * 0.2)
+    #Per episode
+    graphy = []
+    test_size = int(365 * 48 * 0.25)
     random.seed(55) #For consistency
     test_inds = random.sample(range(0, 365*48), test_size)
-    
-
+    #Per timestep
+    testx = []
     test_tmp = []
     testy = []
-    test_actions = []
-
-    train_acitons = []
-    train_rewards = []
     is_random = False
+    #TODO Test this on a training set of 2017 if possible. Otherwise sample it
+    #From data in the current set
     loop = tqdm(range(num_episodes))
     for episode in loop:
         observation, _ = envs.reset()
-        done = False
+        done = [False]
         #When not done. This is an array of 
         #dones
+
+        eval_val = 0
         step = 0
-        while not done:
-            if is_random:
-                actions = [ random.randint(1, 2) for x in range(envs_running)]
-            else:
-                actions = [2 for _ in range(envs_running)]
+        train_val = 0
+        balance = 0
+        while sum(done) < envs_running:
+            actions = [2]
             if step in test_inds:
                 #Perform calculations without gradients
+
                 with torch.no_grad():
+
                     next_observation, reward, done,truncated,  _ = envs.step(actions)
-                    test_tmp.append(sum(reward)/len(reward))
-                    # test_actions.append(actions)
+                    test_tmp.append(sum(reward) / envs_running)
+                    obs = []
+                    for ob in observation:
+                        obs.append(ob[-2])
+                    testx.append(obs)#Get in the price
+                    eval_val = sum(reward) / envs_running
+                    balance += sum(reward) 
             else:
-
+               
                 next_observation, reward, done,truncated,  _ = envs.step(actions)
+                #Try Spare sell rewards
+                bias = 2
+                i = 0
+                train_val = sum(reward)/envs_running
+                balance += sum(reward)
 
-                # train_acitons.append(actions)
-                # train_rewards.append(reward)
-
+                   
+            loop.set_description(f"Reward Average: {train_val} Eval: {eval_val}") 
             # Update the current observation with the next observation
             observation = next_observation
             step += 1
-        if isinstance(agent, AgentRNN) or isinstance(agent, ActorCNN):
-            agent.reset() #Clear the hidden states
-        
-        
-        graphy.append(sum(test_tmp))
-        testy = test_tmp.copy()
+
+
+        graphy.append(sum(test_tmp) / len(test_tmp))
+        testy.extend(test_tmp.copy())
         test_tmp.clear()
         
-    bal_str = f'./per_balance_{"random" if is_random else "sell"}.txt'
-    with open(bal_str, 'w') as f:
+    
+    with open(f'./metrics/rs_per_episode_{is_random}.txt', 'w') as f:
         f.writelines(str(graphy))
 
-    eps_str = f'./per_episode_{"random" if is_random else "sell"}.txt'
-    with open(eps_str, 'w') as f:
+    with open(f'./metrics/rs_per_timestep_{is_random}.txt', 'w') as f:
         f.writelines(str(testy))
+
+    with open(f'./metrics/rs_balance_{is_random}.txt', 'w') as f:
+        f.writelines(str(balance))
 
     # Close the environment when done
     # print(sum(agent.memory.rewards[-1]))

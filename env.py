@@ -72,7 +72,7 @@ class SolarEnv(gym.Env):
         self.rewards = []
   
     def calc_reward(self, last_balance, aux=0):
-        reward = (self.balance - last_balance)*1000
+        reward = (self.balance - last_balance)*1000*1000
         return reward
         
     def get_wattage(self, vmp, imp):

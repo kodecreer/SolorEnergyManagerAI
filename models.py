@@ -45,7 +45,7 @@ class AIModel(nn.Module):
 
 class ActorNetwork(AIModel):
     def __init__(self, n_actions, input_dims, alpha,
-            fc1_dims=256, fc2_dims=256, chkpt_dir='tmp'):
+            fc1_dims=512, fc2_dims=512, chkpt_dir='tmp'):
         super(ActorNetwork, self).__init__(alpha)
 
         self.checkpoint_file = os.path.join(chkpt_dir, 'actor_torch_ppo.mdl')
@@ -68,7 +68,7 @@ class ActorNetwork(AIModel):
 
 
 class CriticNetwork(AIModel):
-    def __init__(self, input_dims, alpha, fc1_dims=256, fc2_dims=256,
+    def __init__(self, input_dims, alpha, fc1_dims=512, fc2_dims=512,
             chkpt_dir='tmp'):
         super(CriticNetwork, self).__init__(alpha)
 
@@ -90,17 +90,24 @@ class CriticNetwork(AIModel):
 
 
 class ActorRNN(AIModel):
-    def __init__(self, n_actions, input_dims, alpha, chkpt_dir='tmp'):
+    def __init__(self, n_actions, input_dims, alpha, fc1_dims=512, fc2_dims=512, chkpt_dir='tmp'):
         super(ActorRNN, self).__init__(alpha)
 
         self.checkpoint_file = os.path.join(chkpt_dir, 'actor_torch_ppo.mdl')
-        self.actor = nn.GRU(input_dims, n_actions)
+        self.actor = nn.GRU(input_dims, fc1_dims)
+        self.mlp = nn.Sequential(
+            nn.Linear(fc1_dims, fc2_dims),
+            nn.ReLU(fc2_dims),
+            nn.LayerNorm(fc2_dims),
+            nn.Linear(fc2_dims, n_actions)
+        )
         self.hidden = None
         self.init()
 
     def forward(self, state):
 
         dist, hidden = self.actor(state, self.hidden)
+        dist = self.mlp(dist)
         dist = Categorical(F.softmax(dist, dim=-1))
         self.hidden = hidden.detach().clone()
 
@@ -108,23 +115,30 @@ class ActorRNN(AIModel):
 
 
 class CriticRNN(AIModel):
-    def __init__(self, input_dims, alpha, fc1_dims=256, fc2_dims=256,
+    def __init__(self, input_dims, alpha, fc1_dims=512, fc2_dims=512,
             chkpt_dir='tmp'):
         super(CriticRNN, self).__init__(alpha)
 
         self.checkpoint_file = os.path.join(chkpt_dir, 'critic_torch_ppo.mdl')
-        self.critic = nn.GRU(input_dims, 1)
+        self.critic = nn.GRU(input_dims, fc1_dims)
+        self.mlp = nn.Sequential(
+            nn.Linear(fc1_dims, fc2_dims),
+            nn.ReLU(fc2_dims),
+            nn.LayerNorm(fc2_dims),
+            nn.Linear(fc2_dims, 1)
+        )
         self.hidden = None
         self.init()
 
     def forward(self, state):
         value, hidden = self.critic(state, self.hidden)
+        value = self.mlp(value)
         self.hidden = hidden.detach().clone()
         return value
 
 
 class ActorCNN(AIModel):
-    def __init__(self, n_actions, input_dims, alpha, fc1_dims=256, fc2_dims=256, chkpt_dir='tmp'):
+    def __init__(self, n_actions, input_dims, alpha, fc1_dims=512, fc2_dims=512, chkpt_dir='tmp'):
         super(ActorCNN, self).__init__(alpha)
         self.checkpoint_file = os.path.join(chkpt_dir, 'actor_torch_ppo.mdl')
         self.actor = nn.Sequential( 
@@ -155,7 +169,7 @@ class ActorCNN(AIModel):
 
 
 class CriticCNN(AIModel):
-    def __init__(self, input_dims, alpha, fc1_dims=256, fc2_dims=256,
+    def __init__(self, input_dims, alpha, fc1_dims=512, fc2_dims=512,
             chkpt_dir='tmp'):
         super(CriticCNN, self).__init__(alpha)
 
@@ -201,7 +215,7 @@ class PositionalEncoding(nn.Module):
         x = x + self.pe[:x.size(0)]
         return self.dropout(x)
 class ActorT(AIModel):
-    def __init__(self, n_actions, input_dims, alpha,fc1_dims=1024, fc2_dims=1024, num_heads=4, chkpt_dir='tmp'):
+    def __init__(self, n_actions, input_dims, alpha,fc1_dims=512, fc2_dims=512, num_heads=4, chkpt_dir='tmp'):
         super(ActorT, self).__init__(alpha)
 
         self.checkpoint_file = os.path.join(chkpt_dir, 'actor_torch_ppo.mdl')
@@ -222,9 +236,11 @@ class ActorT(AIModel):
         self.ln2  = nn.LayerNorm(fc2_dims)
         self.fc = nn.Linear(fc2_dims, n_actions, bias=False)#Final layer to emulate diagram
         self.memory = [] #Keep a memory context for future use and generate auto-regressively
-        self.ctx_len = 64
+        self.ctx_len = 128
         self.init()
 
+    def reset(self):
+        self.memory.clear()
 
     def forward(self, state):
         obs = state
@@ -250,7 +266,7 @@ class ActorT(AIModel):
 
 
 class CriticT(AIModel):
-    def __init__(self, input_dims, alpha, fc1_dims=1024, fc2_dims=1024, num_heads=4,
+    def __init__(self, input_dims, alpha, fc1_dims=512, fc2_dims=512, num_heads=4,
             chkpt_dir='tmp'):
         super(CriticT, self).__init__(alpha)
         self.critic = nn.Sequential(
@@ -271,6 +287,8 @@ class CriticT(AIModel):
         self.ctx_len = 64
         self.init()
 
+    def reset(self):
+        self.memory.clear()
 
     def forward(self, state):
         obs = state

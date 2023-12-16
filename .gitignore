@@ -4,3 +4,4 @@ __pycache__/*
 .DS_STORE
 ./tmp/*.txt
 tmp/*.txt
+/metrics/*

@@ -478,7 +478,9 @@ class AgentT(Agent):
         self.actor.memory.clear()
         self.critic.memory.clear()
         super().vectorized_clipped_ppo()
-
+    def reset(self):
+        self.actor.reset()
+        self.critic.reset()
 
 #TODO define a clear method from the buffer.
 # Implement the memory buffer

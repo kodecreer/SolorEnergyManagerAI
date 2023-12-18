@@ -94,11 +94,13 @@ class ActorRNN(AIModel):
         super(ActorRNN, self).__init__(alpha)
 
         self.checkpoint_file = os.path.join(chkpt_dir, 'actor_torch_ppo.mdl')
-        self.actor = nn.GRU(input_dims, fc1_dims)
+        num_layers = 1
+        self.actor = nn.GRU(input_dims, fc1_dims, num_layers, batch_first=True)
         self.mlp = nn.Sequential(
             nn.Linear(fc1_dims, fc2_dims),
             nn.ReLU(fc2_dims),
             nn.LayerNorm(fc2_dims),
+            nn.Dropout(0.3),
             nn.Linear(fc2_dims, n_actions)
         )
         self.hidden = None
@@ -120,11 +122,13 @@ class CriticRNN(AIModel):
         super(CriticRNN, self).__init__(alpha)
 
         self.checkpoint_file = os.path.join(chkpt_dir, 'critic_torch_ppo.mdl')
-        self.critic = nn.GRU(input_dims, fc1_dims)
+        num_layers = 3
+        self.critic = nn.GRU(input_dims, fc1_dims, num_layers, batch_first=True)
         self.mlp = nn.Sequential(
             nn.Linear(fc1_dims, fc2_dims),
             nn.ReLU(fc2_dims),
             nn.LayerNorm(fc2_dims),
+            nn.Dropout(0.3),
             nn.Linear(fc2_dims, 1)
         )
         self.hidden = None
@@ -142,8 +146,10 @@ class ActorCNN(AIModel):
         super(ActorCNN, self).__init__(alpha)
         self.checkpoint_file = os.path.join(chkpt_dir, 'actor_torch_ppo.mdl')
         self.actor = nn.Sequential( 
-            nn.Conv1d(1, 32, kernel_size=1),
-            nn.ConvTranspose1d(32, 1, kernel_size=1)
+            nn.Conv1d(1, 32, 3, 1, 1),
+            nn.Conv1d(32, 64, 3,1,1),
+            nn.Conv1d(64, 128, 3,1,1),
+            nn.ConvTranspose1d(128, 1, 3,1,1)
         )
         self.fc = nn.Sequential(
             nn.Linear(input_dims, fc1_dims),
@@ -175,8 +181,10 @@ class CriticCNN(AIModel):
 
         self.checkpoint_file = os.path.join(chkpt_dir, 'critic_torch_ppo.mdl')
         self.critic = nn.Sequential( 
-            nn.Conv1d(1, 32, kernel_size=1),
-            nn.ConvTranspose1d(32, 1, kernel_size=1)
+            nn.Conv1d(1, 32, 3, 1, 1),
+            nn.Conv1d(32, 64, 3,1,1),
+            nn.Conv1d(64, 128, 3,1,1),
+            nn.ConvTranspose1d(128, 1, 3,1,1)
         )
         self.net = nn.Sequential(
             nn.Linear(input_dims, fc1_dims),
@@ -215,7 +223,7 @@ class PositionalEncoding(nn.Module):
         x = x + self.pe[:x.size(0)]
         return self.dropout(x)
 class ActorT(AIModel):
-    def __init__(self, n_actions, input_dims, alpha,fc1_dims=512, fc2_dims=512, num_heads=4, chkpt_dir='tmp'):
+    def __init__(self, n_actions, input_dims, alpha,fc1_dims=512, fc2_dims=512, num_heads=8, chkpt_dir='tmp'):
         super(ActorT, self).__init__(alpha)
 
         self.checkpoint_file = os.path.join(chkpt_dir, 'actor_torch_ppo.mdl')
@@ -314,13 +322,15 @@ class CriticT(AIModel):
 
         return value
     
-
+def count_params(model, message=''):
+    print(f'{message}: {sum(p.numel() for p in model.parameters())}')
 class Agent:
     def __init__(self, n_actions, HyperParams: HyperParameterConfig) -> None:
         self.actor = ActorNetwork(n_actions, 14, 0.0001)
-        print(self.actor.device)
+        count_params(self.actor, 'MLP Actor')
         self.device = self.actor.device
         self.critic = CriticNetwork(14, 0.0001)
+        count_params(self.critic, 'MLP Critic')
         self.memory = MemoryBuffer(100)
         self.config = HyperParams
     
@@ -447,9 +457,10 @@ class Agent:
 class AgentRNN(Agent):
     def __init__(self, n_actions, HyperParams: HyperParameterConfig) -> None:
         self.actor = ActorRNN(n_actions, 14, 0.0001)
-        print(self.actor.device)
+        count_params(self.actor, 'RNN Actor')
         self.device = self.actor.device
         self.critic = CriticRNN(14, 0.0001)
+        count_params(self.critic, 'RNN Critic')
         self.memory = MemoryBuffer(100)
         self.config = HyperParams
     def reset(self):
@@ -458,9 +469,10 @@ class AgentRNN(Agent):
 class AgentCNN(Agent):
     def __init__(self, n_actions, HyperParams: HyperParameterConfig) -> None:
         self.actor = ActorCNN(n_actions, 14, 0.0001)
-        print(self.actor.device)
+        count_params(self.actor, 'CNN Actor')
         self.device = self.actor.device
         self.critic = CriticCNN(14, 0.0001)
+        count_params(self.critic, 'CNN Critic')
         self.memory = MemoryBuffer(100)
         self.config = HyperParams
     def reset(self):
@@ -469,9 +481,10 @@ class AgentCNN(Agent):
 class AgentT(Agent):
     def __init__(self, n_actions, HyperParams: HyperParameterConfig) -> None:
         self.actor = ActorT(n_actions, 14, 0.00001)
-        print(self.actor.device)
+        count_params(self.actor, 'Transformer Critic')
         self.device = self.actor.device
         self.critic = CriticT(14, 0.00001)
+        count_params(self.critic, 'Transformer Critic')
         self.memory = MemoryBuffer(100)
         self.config = HyperParams
     def vectorized_clipped_ppo(self):

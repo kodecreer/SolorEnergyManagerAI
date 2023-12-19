@@ -18,7 +18,7 @@ from models import *
 import sys
 if __name__ == '__main__':
     torch.set_default_device('cuda')
-    envs_running = 20 #amount of envs running for data collection
+    envs_running = 1#20 #amount of envs running for data collection
     envs = gym.vector.SyncVectorEnv(
         [lambda: gym.make("SolarEnv-v0") for _ in range(envs_running)]
     )
@@ -27,7 +27,7 @@ if __name__ == '__main__':
     observation = envs.reset()
 
     # Define the number of episodes (or time steps) you want to run the environment
-    num_episodes = 20
+    num_episodes = 5
     #How often to update the graph.
     #The lower the number, the slower it goes through all the adata
     log_interval = 1000
@@ -57,12 +57,12 @@ if __name__ == '__main__':
         agent = Agent(2, params)
         random_only = True
     print(agent)
-    batch_size = 120  #Transformer is VRAM hungry...
+    batch_size = 128  #Transformer is VRAM hungry...
     agent.memory.batch_size = batch_size
     #Per episode
     graphy = []
     test_size = int(365 * 48 * 0.25)
-    random.seed(55) #For consistency
+    random.seed(40) #For consistency
     test_inds = random.sample(range(0, 365*48), test_size)
     #Per timestep
     testx = []
@@ -87,6 +87,7 @@ if __name__ == '__main__':
             if step in test_inds:
                 actions = [1 for x in range(envs_running)]
                 envs.step(actions)
+         
             else:
                 if sell_only:
                     actions = [2 for x in  range(envs_running)]
@@ -120,9 +121,10 @@ if __name__ == '__main__':
             observation = next_observation
             step += 1
 
-        if isinstance(agent, AgentRNN) or isinstance(agent, ActorCNN) or isinstance(agent, AgentT):
+        if isinstance(agent, AgentRNN) or isinstance(agent, ActorCNN): #or isinstance(agent, AgentT):
             agent.reset() #Clear the hidden states
-    agent.vectorized_clipped_ppo()
+    if not random_only and not sell_only:
+        agent.vectorized_clipped_ppo()
     print("Evaluation")
     with torch.no_grad():
         
@@ -153,7 +155,7 @@ if __name__ == '__main__':
             graphy.append(sum(test_tmp))
             testy.extend(test_tmp.copy())
             test_tmp.clear()
-            if isinstance(agent, AgentRNN) or isinstance(agent, ActorCNN) or isinstance(agent, AgentT):
+            if isinstance(agent, AgentRNN) or isinstance(agent, ActorCNN):# or isinstance(agent, AgentT):
                 agent.reset() #Clear the hidden states
     
     with open(f'./metrics/per_episode_{arg_val}.txt', 'w') as f:
@@ -167,4 +169,3 @@ if __name__ == '__main__':
 
     
     envs.close()
-

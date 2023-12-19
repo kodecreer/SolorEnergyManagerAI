@@ -18,9 +18,6 @@ class HyperParameterConfig():
     gamma = 0.99
     gae_lambda = 0.95
 
-    
-    min_lr = learning_rate * 0.1
-
 
 
 class AIModel(nn.Module):
@@ -35,7 +32,6 @@ class AIModel(nn.Module):
         self.alpha = alpha
     def init(self):
         self.optimizer = optim.Adam(self.parameters(), lr=self.alpha)
-        # self.step_lr = optim.lr_scheduler.CosineAnnealingLR(self.optimizer, self.alpha, self.alpha*0.1)
 
     def save_checkpoint(self):
         torch.save(self.state_dict(), self.checkpoint_file)
@@ -45,7 +41,7 @@ class AIModel(nn.Module):
 
 class ActorNetwork(AIModel):
     def __init__(self, n_actions, input_dims, alpha,
-            fc1_dims=512, fc2_dims=512, chkpt_dir='tmp'):
+            fc1_dims=256, fc2_dims=256, chkpt_dir='tmp'):
         super(ActorNetwork, self).__init__(alpha)
 
         self.checkpoint_file = os.path.join(chkpt_dir, 'actor_torch_ppo.mdl')
@@ -68,7 +64,7 @@ class ActorNetwork(AIModel):
 
 
 class CriticNetwork(AIModel):
-    def __init__(self, input_dims, alpha, fc1_dims=512, fc2_dims=512,
+    def __init__(self, input_dims, alpha, fc1_dims=256, fc2_dims=256,
             chkpt_dir='tmp'):
         super(CriticNetwork, self).__init__(alpha)
 
@@ -90,26 +86,20 @@ class CriticNetwork(AIModel):
 
 
 class ActorRNN(AIModel):
-    def __init__(self, n_actions, input_dims, alpha, fc1_dims=512, fc2_dims=512, chkpt_dir='tmp'):
+    def __init__(self, n_actions, input_dims, alpha, fc1_dims=1024, chkpt_dir='tmp'):
         super(ActorRNN, self).__init__(alpha)
 
         self.checkpoint_file = os.path.join(chkpt_dir, 'actor_torch_ppo.mdl')
-        num_layers = 1
-        self.actor = nn.GRU(input_dims, fc1_dims, num_layers, batch_first=True)
-        self.mlp = nn.Sequential(
-            nn.Linear(fc1_dims, fc2_dims),
-            nn.ReLU(fc2_dims),
-            nn.LayerNorm(fc2_dims),
-            nn.Dropout(0.3),
-            nn.Linear(fc2_dims, n_actions)
-        )
+        layers = 4
+        self.actor = nn.GRU(input_dims, fc1_dims, layers, batch_first=True)
+        self.fc = nn.Linear(fc1_dims, n_actions)
         self.hidden = None
         self.init()
 
     def forward(self, state):
 
         dist, hidden = self.actor(state, self.hidden)
-        dist = self.mlp(dist)
+        dist = self.fc(dist)
         dist = Categorical(F.softmax(dist, dim=-1))
         self.hidden = hidden.detach().clone()
 
@@ -117,39 +107,31 @@ class ActorRNN(AIModel):
 
 
 class CriticRNN(AIModel):
-    def __init__(self, input_dims, alpha, fc1_dims=512, fc2_dims=512,
+    def __init__(self, input_dims, alpha, fc1_dims=1024,
             chkpt_dir='tmp'):
         super(CriticRNN, self).__init__(alpha)
 
         self.checkpoint_file = os.path.join(chkpt_dir, 'critic_torch_ppo.mdl')
-        num_layers = 3
-        self.critic = nn.GRU(input_dims, fc1_dims, num_layers, batch_first=True)
-        self.mlp = nn.Sequential(
-            nn.Linear(fc1_dims, fc2_dims),
-            nn.ReLU(fc2_dims),
-            nn.LayerNorm(fc2_dims),
-            nn.Dropout(0.3),
-            nn.Linear(fc2_dims, 1)
-        )
+        layers = 4
+        self.critic = nn.GRU(input_dims, fc1_dims, layers, batch_first=True)
+        self.fc = nn.Linear(fc1_dims, 1)
         self.hidden = None
         self.init()
 
     def forward(self, state):
         value, hidden = self.critic(state, self.hidden)
-        value = self.mlp(value)
+        value = self.fc(value)
         self.hidden = hidden.detach().clone()
         return value
 
 
 class ActorCNN(AIModel):
-    def __init__(self, n_actions, input_dims, alpha, fc1_dims=512, fc2_dims=512, chkpt_dir='tmp'):
+    def __init__(self, n_actions, input_dims, alpha, fc1_dims=256, fc2_dims=256, chkpt_dir='tmp'):
         super(ActorCNN, self).__init__(alpha)
         self.checkpoint_file = os.path.join(chkpt_dir, 'actor_torch_ppo.mdl')
         self.actor = nn.Sequential( 
-            nn.Conv1d(1, 32, 3, 1, 1),
-            nn.Conv1d(32, 64, 3,1,1),
-            nn.Conv1d(64, 128, 3,1,1),
-            nn.ConvTranspose1d(128, 1, 3,1,1)
+            nn.Conv1d(1, 32, kernel_size=1),
+            nn.ConvTranspose1d(32, 1, kernel_size=1)
         )
         self.fc = nn.Sequential(
             nn.Linear(input_dims, fc1_dims),
@@ -175,16 +157,14 @@ class ActorCNN(AIModel):
 
 
 class CriticCNN(AIModel):
-    def __init__(self, input_dims, alpha, fc1_dims=512, fc2_dims=512,
+    def __init__(self, input_dims, alpha, fc1_dims=2048, fc2_dims=2048,
             chkpt_dir='tmp'):
         super(CriticCNN, self).__init__(alpha)
 
         self.checkpoint_file = os.path.join(chkpt_dir, 'critic_torch_ppo.mdl')
         self.critic = nn.Sequential( 
-            nn.Conv1d(1, 32, 3, 1, 1),
-            nn.Conv1d(32, 64, 3,1,1),
-            nn.Conv1d(64, 128, 3,1,1),
-            nn.ConvTranspose1d(128, 1, 3,1,1)
+            nn.Conv1d(1, 32, kernel_size=1),
+            nn.ConvTranspose1d(32, 1, kernel_size=1)
         )
         self.net = nn.Sequential(
             nn.Linear(input_dims, fc1_dims),
@@ -223,7 +203,7 @@ class PositionalEncoding(nn.Module):
         x = x + self.pe[:x.size(0)]
         return self.dropout(x)
 class ActorT(AIModel):
-    def __init__(self, n_actions, input_dims, alpha,fc1_dims=512, fc2_dims=512, num_heads=8, chkpt_dir='tmp'):
+    def __init__(self, n_actions, input_dims, alpha,fc1_dims=2048, fc2_dims=2048, num_heads=4, chkpt_dir='tmp'):
         super(ActorT, self).__init__(alpha)
 
         self.checkpoint_file = os.path.join(chkpt_dir, 'actor_torch_ppo.mdl')
@@ -244,11 +224,9 @@ class ActorT(AIModel):
         self.ln2  = nn.LayerNorm(fc2_dims)
         self.fc = nn.Linear(fc2_dims, n_actions, bias=False)#Final layer to emulate diagram
         self.memory = [] #Keep a memory context for future use and generate auto-regressively
-        self.ctx_len = 128
+        self.ctx_len = 64
         self.init()
 
-    def reset(self):
-        self.memory.clear()
 
     def forward(self, state):
         obs = state
@@ -274,7 +252,7 @@ class ActorT(AIModel):
 
 
 class CriticT(AIModel):
-    def __init__(self, input_dims, alpha, fc1_dims=512, fc2_dims=512, num_heads=4,
+    def __init__(self, input_dims, alpha, fc1_dims=2048, fc2_dims=2048, num_heads=4,
             chkpt_dir='tmp'):
         super(CriticT, self).__init__(alpha)
         self.critic = nn.Sequential(
@@ -295,8 +273,6 @@ class CriticT(AIModel):
         self.ctx_len = 64
         self.init()
 
-    def reset(self):
-        self.memory.clear()
 
     def forward(self, state):
         obs = state
@@ -322,15 +298,13 @@ class CriticT(AIModel):
 
         return value
     
-def count_params(model, message=''):
-    print(f'{message}: {sum(p.numel() for p in model.parameters())}')
+
 class Agent:
     def __init__(self, n_actions, HyperParams: HyperParameterConfig) -> None:
         self.actor = ActorNetwork(n_actions, 14, 0.0001)
-        count_params(self.actor, 'MLP Actor')
+        print(self.actor.device)
         self.device = self.actor.device
         self.critic = CriticNetwork(14, 0.0001)
-        count_params(self.critic, 'MLP Critic')
         self.memory = MemoryBuffer(100)
         self.config = HyperParams
     
@@ -387,8 +361,6 @@ class Agent:
                 total_loss.backward()
                 self.actor.optimizer.step()
                 self.critic.optimizer.step()
-                # self.actor.step_lr.step()
-                # self.critic.step_lr.step()
         self.memory.clear() 
     def vectorized_clipped_ppo(self):
         #Run PPO Algorithm
@@ -447,8 +419,6 @@ class Agent:
             total_loss.backward()
             self.actor.optimizer.step()
             self.critic.optimizer.step()
-            # self.actor.step_lr.step()
-            # self.critic.step_lr.step()
             if isinstance(self.actor, ActorT):
                 self.actor.memory.clear()
                 self.critic.memory.clear()
@@ -457,10 +427,9 @@ class Agent:
 class AgentRNN(Agent):
     def __init__(self, n_actions, HyperParams: HyperParameterConfig) -> None:
         self.actor = ActorRNN(n_actions, 14, 0.0001)
-        count_params(self.actor, 'RNN Actor')
+        print(self.actor.device)
         self.device = self.actor.device
         self.critic = CriticRNN(14, 0.0001)
-        count_params(self.critic, 'RNN Critic')
         self.memory = MemoryBuffer(100)
         self.config = HyperParams
     def reset(self):
@@ -469,10 +438,9 @@ class AgentRNN(Agent):
 class AgentCNN(Agent):
     def __init__(self, n_actions, HyperParams: HyperParameterConfig) -> None:
         self.actor = ActorCNN(n_actions, 14, 0.0001)
-        count_params(self.actor, 'CNN Actor')
+        print(self.actor.device)
         self.device = self.actor.device
         self.critic = CriticCNN(14, 0.0001)
-        count_params(self.critic, 'CNN Critic')
         self.memory = MemoryBuffer(100)
         self.config = HyperParams
     def reset(self):
@@ -481,19 +449,16 @@ class AgentCNN(Agent):
 class AgentT(Agent):
     def __init__(self, n_actions, HyperParams: HyperParameterConfig) -> None:
         self.actor = ActorT(n_actions, 14, 0.00001)
-        count_params(self.actor, 'Transformer Critic')
+        print(self.actor.device)
         self.device = self.actor.device
         self.critic = CriticT(14, 0.00001)
-        count_params(self.critic, 'Transformer Critic')
         self.memory = MemoryBuffer(100)
         self.config = HyperParams
     def vectorized_clipped_ppo(self):
         self.actor.memory.clear()
         self.critic.memory.clear()
         super().vectorized_clipped_ppo()
-    def reset(self):
-        self.actor.reset()
-        self.critic.reset()
+
 
 #TODO define a clear method from the buffer.
 # Implement the memory buffer

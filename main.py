@@ -27,7 +27,7 @@ if __name__ == '__main__':
     observation = envs.reset()
 
     # Define the number of episodes (or time steps) you want to run the environment
-    num_episodes = 5
+    num_episodes = 100
     #How often to update the graph.
     #The lower the number, the slower it goes through all the adata
     log_interval = 1000
@@ -57,13 +57,13 @@ if __name__ == '__main__':
         agent = Agent(2, params)
         random_only = True
     print(agent)
-    batch_size = 128  #Transformer is VRAM hungry...
+    batch_size = 64  #Transformer is VRAM hungry...
     agent.memory.batch_size = batch_size
     #Per episode
     graphy = []
-    test_size = int(365 * 48 * 0.25)
+    test_size = int(365* 0.2)
     random.seed(40) #For consistency
-    test_inds = random.sample(range(0, 365*48), test_size)
+    test_inds = random.sample(range(0, 365), test_size)
     #Per timestep
     testx = []
     test_tmp = []
@@ -86,7 +86,7 @@ if __name__ == '__main__':
             
             if step in test_inds:
                 actions = [1 for x in range(envs_running)]
-                envs.step(actions)
+                next_observation, reward, done,truncated,  _ = envs.step(actions)
          
             else:
                 if sell_only:

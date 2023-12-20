@@ -53,17 +53,14 @@ class SolarEnv(gym.Env):
         self.train_sz = len(self.df)-1
         self.action_space = spaces.Discrete(2)
         self.observation_space = spaces.Box(
-            low=0, high=np.inf, shape=(14,), dtype=np.float32
+            low=0, high=np.inf, shape=(4,), dtype=np.float32
         )
         #Key for the AI network
         self.balance = 0
         self.wattage_balance = 0
         #Smart home manager, smart home speaker , Electric vehicle charging
-        self.power_daily = (25/12 + 26/12 + 353.3) / 31 
-        self.power_sub = self.power_daily / 48 #Kilowatts to substract from wattage_balance per time step
-        self.carbon_punishment = 10
-        self.current_step = 0
-        self.utility_rate = 35.0 #Base on san francisco adjust for location
+        self.power_day = 0
+        self.wattage_rate = 0
 
         self.hour = 1
         self.vimp = []
@@ -71,8 +68,8 @@ class SolarEnv(gym.Env):
         self.actions = []
         self.rewards = []
   
-    def calc_reward(self, last_balance, aux=0):
-        reward = self.balance - last_balance
+    def calc_reward(self, aux=1):
+        reward = (self.wattage_balance + self.power_day) * self.wattage_rate * aux 
         return reward
         
     def get_wattage(self, vmp, imp):
@@ -80,81 +77,78 @@ class SolarEnv(gym.Env):
         return pmax
 
     def step(self, action):
-        vimp = self.df['Vmp'][self.current_step]
-        imp = self.df['Imp'][self.current_step]
-
-        last_balance = self.balance
-        # self.vimp.append(vimp)
-        # self.imp.append(imp)
-
-        #Account for weekend
-        yearday = self.current_step
-        dayahead = pd.to_datetime( self.energy_dates[self.energy_step+1] )
-        start = pd.to_datetime( self.start_date )
-        # if len(self.energy_dates) > self.energy_step + 1:
-        day_diff = (dayahead - start).days
-        if day_diff  < yearday / 48:
-            start = dayahead
-            self.energy_step += 1
-            
-
-
-        WATTAGE_RATE = self.energy_prices[self.energy_step]/1000
-        kilo_watts = self.get_wattage(vimp, imp)/1000#Lets assum Kilo Watts for now
-
-        #Hold the power, it will force sell
-        aux = 0
+        reward = 0
         if action == 1:
-            #Add it to the balance
-            self.wattage_balance += kilo_watts  #I am assuming the grid would only buy at discounts
-            #subtract the amount of energy consumed
-            # self.wattage_balance -= self.power_sub 
-            # if self.wattage_balance < 0:
-            #     #Subtract from the balance
-            #     self.balance -= abs(self.wattage_balance * self.utility_rate) #* self.carbon_punishment
-            #     self.wattage_balance = 0
-
-            self.actions.append(action)
-        #Sell it back to the grid
-        #First subtract the wattage consumed from the balane
-        #Then add it back toe the balance and sell the excess
-        #You get no money for selling money you don't have
+            #hold
+            self.wattage_balance += self.power_day
         else:
-            # self.wattage_balance -= self.power_sub
-            self.wattage_balance += kilo_watts
-            
-            if self.wattage_balance > 0:
-                #Assuming it's a discount back to thep ower grid
-                self.balance += self.wattage_balance * WATTAGE_RATE 
-            # else:
-            #     # Whatver we have, buy the remaining eletricity needed
-            #     self.balance -= abs(self.wattage_balance * self.utility_rate) #* self.carbon_punishment
+            #sell
+            reward = self.calc_reward()
+            self.balance += reward
+            reward *= 100 
             self.wattage_balance = 0
-            self.actions.append(action)
-        self.rewards.append(self.balance)
-        self.current_step += 1
-        done = self.current_step >= self.train_sz
-        observation = np.append( np.array(self.df.iloc[self.current_step].values), WATTAGE_RATE )
-        observation = np.append( observation, self.wattage_balance )
-        truncated = done
-        if done:
-            print(f'Balance: ${self.balance/1000:.2f}')
-        #for now we will naively set the reward to the balance...
-        #Since that is the key statistic we want to maximize.
-        #May need to consider something else later
-        reward = self.calc_reward(last_balance)
+        self.power_day = 0
+        done = truncated = self.train_sz <= self.current_step
+        #Get the day ahead for the observation
+       
+        self.wattage_rate = 0
+        self.power_day = 0
+        if not done:
+            for i in range(48):
+                vimp = self.df['Vmp'][self.current_step]
+                imp = self.df['Imp'][self.current_step]
+        
+                #Account for weekend
+                yearday = self.current_step
+                dayahead = pd.to_datetime( self.energy_dates[self.energy_step+1] )
+                start = pd.to_datetime( self.start_date )
+
+                day_diff = (dayahead - start).days
+                if day_diff  < yearday / 48:
+                    start = dayahead
+                    self.energy_step += 1
+                self.wattage_rate = self.energy_prices[self.energy_step]/1000
+
+                
+                kilo_watts = self.get_wattage(vimp, imp)/1000#Lets assum Kilo Watts for now
+                self.power_day += kilo_watts
+                self.current_step += 1
+                #Day of the year, price, wattage stored, power generated in the day
+                observation = np.array([self.current_step//48, self.wattage_rate, self.wattage_balance, self.power_day])
+        else:
+            print(f'Balance: {self.balance:.2f}')
+            observation = np.array([0, 0, 0, 0])
         return observation,reward,  done, truncated, {}
 
     def reset(self, seed=None, options=None):
         self.current_step = 0
         self.energy_step = 0
         self.balance = 0
-        self.actions = []
-        self.vimp = []
-        self.imp = []
-        observation =  np.append(np.array(self.df.iloc[0].values), self.energy_prices[0]/1000)
-        observation =  ( np.append(observation, self.wattage_balance)) 
-        return observation, {}
+
+        self.wattage_rate = 0
+        self.power_day = 0
+        for i in range(48):
+            vimp = self.df['Vmp'][self.current_step]
+            imp = self.df['Imp'][self.current_step]
+            #Account for weekend
+            yearday = self.current_step
+            dayahead = pd.to_datetime( self.energy_dates[self.energy_step+1] )
+            start = pd.to_datetime( self.start_date )
+
+            day_diff = (dayahead - start).days
+            if day_diff  < yearday / 48:
+                start = dayahead
+                self.energy_step += 1
+            self.wattage_rate = self.energy_prices[self.energy_step]/1000
+
+            
+            kilo_watts = self.get_wattage(vimp, imp)/1000#Lets assum Kilo Watts for now
+            self.power_day += kilo_watts
+            self.current_step += 1
+        #Day of the year, price, wattage stored, power generated in the day
+        observation = np.array([self.current_step//48, self.wattage_rate, self.wattage_balance, self.power_day])
+        return observation,{}
+
 
     def render(self, mode='human'):
         log_val = 100

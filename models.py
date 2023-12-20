@@ -86,11 +86,11 @@ class CriticNetwork(AIModel):
 
 
 class ActorRNN(AIModel):
-    def __init__(self, n_actions, input_dims, alpha, fc1_dims=1024, chkpt_dir='tmp'):
+    def __init__(self, n_actions, input_dims, alpha, fc1_dims=256, chkpt_dir='tmp'):
         super(ActorRNN, self).__init__(alpha)
 
         self.checkpoint_file = os.path.join(chkpt_dir, 'actor_torch_ppo.mdl')
-        layers = 4
+        layers = 2
         self.actor = nn.GRU(input_dims, fc1_dims, layers, batch_first=True)
         self.fc = nn.Linear(fc1_dims, n_actions)
         self.hidden = None
@@ -107,12 +107,12 @@ class ActorRNN(AIModel):
 
 
 class CriticRNN(AIModel):
-    def __init__(self, input_dims, alpha, fc1_dims=1024,
+    def __init__(self, input_dims, alpha, fc1_dims=256,
             chkpt_dir='tmp'):
         super(CriticRNN, self).__init__(alpha)
 
         self.checkpoint_file = os.path.join(chkpt_dir, 'critic_torch_ppo.mdl')
-        layers = 4
+        layers = 2
         self.critic = nn.GRU(input_dims, fc1_dims, layers, batch_first=True)
         self.fc = nn.Linear(fc1_dims, 1)
         self.hidden = None
@@ -157,7 +157,7 @@ class ActorCNN(AIModel):
 
 
 class CriticCNN(AIModel):
-    def __init__(self, input_dims, alpha, fc1_dims=2048, fc2_dims=2048,
+    def __init__(self, input_dims, alpha, fc1_dims=256, fc2_dims=256,
             chkpt_dir='tmp'):
         super(CriticCNN, self).__init__(alpha)
 
@@ -203,7 +203,7 @@ class PositionalEncoding(nn.Module):
         x = x + self.pe[:x.size(0)]
         return self.dropout(x)
 class ActorT(AIModel):
-    def __init__(self, n_actions, input_dims, alpha,fc1_dims=2048, fc2_dims=2048, num_heads=4, chkpt_dir='tmp'):
+    def __init__(self, n_actions, input_dims, alpha,fc1_dims=256, fc2_dims=256, num_heads=8, chkpt_dir='tmp'):
         super(ActorT, self).__init__(alpha)
 
         self.checkpoint_file = os.path.join(chkpt_dir, 'actor_torch_ppo.mdl')
@@ -252,7 +252,7 @@ class ActorT(AIModel):
 
 
 class CriticT(AIModel):
-    def __init__(self, input_dims, alpha, fc1_dims=2048, fc2_dims=2048, num_heads=4,
+    def __init__(self, input_dims, alpha, fc1_dims=256, fc2_dims=256, num_heads=8,
             chkpt_dir='tmp'):
         super(CriticT, self).__init__(alpha)
         self.critic = nn.Sequential(
@@ -300,11 +300,12 @@ class CriticT(AIModel):
     
 
 class Agent:
+    input_dim = 4
     def __init__(self, n_actions, HyperParams: HyperParameterConfig) -> None:
-        self.actor = ActorNetwork(n_actions, 14, 0.0001)
+        self.actor = ActorNetwork(n_actions, self.input_dim, 0.0001)
         print(self.actor.device)
         self.device = self.actor.device
-        self.critic = CriticNetwork(14, 0.0001)
+        self.critic = CriticNetwork(self.input_dim, 0.0001)
         self.memory = MemoryBuffer(100)
         self.config = HyperParams
     
@@ -426,10 +427,10 @@ class Agent:
 
 class AgentRNN(Agent):
     def __init__(self, n_actions, HyperParams: HyperParameterConfig) -> None:
-        self.actor = ActorRNN(n_actions, 14, 0.0001)
+        self.actor = ActorRNN(n_actions, self.input_dim, 0.0001)
         print(self.actor.device)
         self.device = self.actor.device
-        self.critic = CriticRNN(14, 0.0001)
+        self.critic = CriticRNN(self.input_dim, 0.0001)
         self.memory = MemoryBuffer(100)
         self.config = HyperParams
     def reset(self):
@@ -437,10 +438,10 @@ class AgentRNN(Agent):
         self.critic.hidden = None
 class AgentCNN(Agent):
     def __init__(self, n_actions, HyperParams: HyperParameterConfig) -> None:
-        self.actor = ActorCNN(n_actions, 14, 0.0001)
+        self.actor = ActorCNN(n_actions, self.input_dim, 0.0001)
         print(self.actor.device)
         self.device = self.actor.device
-        self.critic = CriticCNN(14, 0.0001)
+        self.critic = CriticCNN(self.input_dim, 0.0001)
         self.memory = MemoryBuffer(100)
         self.config = HyperParams
     def reset(self):
@@ -448,16 +449,18 @@ class AgentCNN(Agent):
         self.critic.hidden = None
 class AgentT(Agent):
     def __init__(self, n_actions, HyperParams: HyperParameterConfig) -> None:
-        self.actor = ActorT(n_actions, 14, 0.00001)
+        self.actor = ActorT(n_actions, self.input_dim, 0.0001)
         print(self.actor.device)
         self.device = self.actor.device
-        self.critic = CriticT(14, 0.00001)
+        self.critic = CriticT(self.input_dim, 0.0001)
         self.memory = MemoryBuffer(100)
         self.config = HyperParams
     def vectorized_clipped_ppo(self):
-        self.actor.memory.clear()
-        self.critic.memory.clear()
+        self.reset()
         super().vectorized_clipped_ppo()
+    def reset(self):
+        self.critic.memory.clear()
+        self.actor.memory.clear()
 
 
 #TODO define a clear method from the buffer.

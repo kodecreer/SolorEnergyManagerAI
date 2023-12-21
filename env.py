@@ -79,13 +79,14 @@ class SolarEnv(gym.Env):
     def step(self, action):
         reward = 0
         if action == 1:
-            #hold
+            #hold for
             self.wattage_balance += self.power_day
         else:
             #sell
             reward = self.calc_reward()
             self.balance += reward
-            reward *= 100 
+            #reward *= 100 
+            reward = self.balance
             self.wattage_balance = 0
         self.power_day = 0
         done = truncated = self.train_sz <= self.current_step
@@ -94,6 +95,7 @@ class SolarEnv(gym.Env):
         self.wattage_rate = 0
         self.power_day = 0
         if not done:
+            last_price = self.wattage_rate
             for i in range(48):
                 vimp = self.df['Vmp'][self.current_step]
                 imp = self.df['Imp'][self.current_step]
@@ -115,9 +117,14 @@ class SolarEnv(gym.Env):
                 self.current_step += 1
                 #Day of the year, price, wattage stored, power generated in the day
                 observation = np.array([self.current_step//48, self.wattage_rate, self.wattage_balance, self.power_day])
+            if last_price < self.wattage_rate and action == 1:
+                reward -= 10
         else:
             print(f'Balance: {self.balance:.2f}')
             observation = np.array([0, 0, 0, 0])
+            if action == 1:
+                reward = -100 #Discourage holding till the end
+            
         return observation,reward,  done, truncated, {}
 
     def reset(self, seed=None, options=None):

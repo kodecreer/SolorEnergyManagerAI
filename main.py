@@ -18,7 +18,7 @@ from models import *
 import sys
 if __name__ == '__main__':
     torch.set_default_device('cuda')
-    envs_running = 1#20 #amount of envs running for data collection
+    envs_running = 1 #amount of envs running for data collection
     envs = gym.vector.SyncVectorEnv(
         [lambda: gym.make("SolarEnv-v0") for _ in range(envs_running)]
     )
@@ -57,7 +57,7 @@ if __name__ == '__main__':
         agent = Agent(2, params)
         random_only = True
     print(agent)
-    batch_size = 64  #Transformer is VRAM hungry...
+    batch_size = 128  #Transformer is VRAM hungry...
     agent.memory.batch_size = batch_size
     #Per episode
     graphy = []
@@ -105,9 +105,10 @@ if __name__ == '__main__':
                     actions, probs, value = agent.choose_action(observation)
                 
                     next_observation, reward, done,truncated,  _ = envs.step(actions)
-
+                
                     train_val = sum(reward)/envs_running
                     balance += sum(reward)
+                
                     for obs, action, prob, val, rew, don in zip(observation, actions, probs, value, reward, done):
                             agent.memory.push( obs, action, prob, val, rew, don)
                     if agent.memory.size() >= agent.memory.batch_size:
@@ -121,7 +122,7 @@ if __name__ == '__main__':
             observation = next_observation
             step += 1
 
-        if isinstance(agent, AgentRNN) or isinstance(agent, ActorCNN): #or isinstance(agent, AgentT):
+        if isinstance(agent, AgentRNN) or isinstance(agent, ActorCNN)or isinstance(agent, AgentT):
             agent.reset() #Clear the hidden states
     if not random_only and not sell_only:
         agent.vectorized_clipped_ppo()
@@ -142,7 +143,7 @@ if __name__ == '__main__':
                     elif random_only:
                         actions = [random.randint(1,2) for x in  range(envs_running)]
                     else:
-                        actions, probs, value = agent.choose_action(observation)
+                        actions, probs, value = agent.choose_action_inf(observation)
                     next_observation, reward, done,truncated,  _ = envs.step(actions)
                     eval_val = sum(reward) / envs_running
                     test_tmp.append(eval_val)
@@ -155,7 +156,7 @@ if __name__ == '__main__':
             graphy.append(sum(test_tmp))
             testy.extend(test_tmp.copy())
             test_tmp.clear()
-            if isinstance(agent, AgentRNN) or isinstance(agent, ActorCNN):# or isinstance(agent, AgentT):
+            if isinstance(agent, AgentRNN) or isinstance(agent, ActorCNN) or isinstance(agent, AgentT):
                 agent.reset() #Clear the hidden states
     
     with open(f'./metrics/per_episode_{arg_val}.txt', 'w') as f:

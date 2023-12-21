@@ -41,7 +41,7 @@ class AIModel(nn.Module):
 
 class ActorNetwork(AIModel):
     def __init__(self, n_actions, input_dims, alpha,
-            fc1_dims=256, fc2_dims=256, chkpt_dir='tmp'):
+            fc1_dims=128, fc2_dims=128, chkpt_dir='tmp'):
         super(ActorNetwork, self).__init__(alpha)
 
         self.checkpoint_file = os.path.join(chkpt_dir, 'actor_torch_ppo.mdl')
@@ -49,6 +49,8 @@ class ActorNetwork(AIModel):
                 nn.Linear(input_dims, fc1_dims),
                 nn.ReLU(),
                 nn.Linear(fc1_dims, fc2_dims),
+                nn.ReLU(),
+                nn.Linear(fc2_dims, fc2_dims),
                 nn.ReLU(),
                 nn.Linear(fc2_dims, n_actions),
                 nn.Softmax(dim=-1)
@@ -64,7 +66,7 @@ class ActorNetwork(AIModel):
 
 
 class CriticNetwork(AIModel):
-    def __init__(self, input_dims, alpha, fc1_dims=256, fc2_dims=256,
+    def __init__(self, input_dims, alpha, fc1_dims=128, fc2_dims=128,
             chkpt_dir='tmp'):
         super(CriticNetwork, self).__init__(alpha)
 
@@ -86,7 +88,7 @@ class CriticNetwork(AIModel):
 
 
 class ActorRNN(AIModel):
-    def __init__(self, n_actions, input_dims, alpha, fc1_dims=256, chkpt_dir='tmp'):
+    def __init__(self, n_actions, input_dims, alpha, fc1_dims=128, chkpt_dir='tmp'):
         super(ActorRNN, self).__init__(alpha)
 
         self.checkpoint_file = os.path.join(chkpt_dir, 'actor_torch_ppo.mdl')
@@ -107,7 +109,7 @@ class ActorRNN(AIModel):
 
 
 class CriticRNN(AIModel):
-    def __init__(self, input_dims, alpha, fc1_dims=256,
+    def __init__(self, input_dims, alpha, fc1_dims=128,
             chkpt_dir='tmp'):
         super(CriticRNN, self).__init__(alpha)
 
@@ -126,7 +128,7 @@ class CriticRNN(AIModel):
 
 
 class ActorCNN(AIModel):
-    def __init__(self, n_actions, input_dims, alpha, fc1_dims=256, fc2_dims=256, chkpt_dir='tmp'):
+    def __init__(self, n_actions, input_dims, alpha, fc1_dims=128, fc2_dims=128, chkpt_dir='tmp'):
         super(ActorCNN, self).__init__(alpha)
         self.checkpoint_file = os.path.join(chkpt_dir, 'actor_torch_ppo.mdl')
         self.actor = nn.Sequential( 
@@ -157,7 +159,7 @@ class ActorCNN(AIModel):
 
 
 class CriticCNN(AIModel):
-    def __init__(self, input_dims, alpha, fc1_dims=256, fc2_dims=256,
+    def __init__(self, input_dims, alpha, fc1_dims=128, fc2_dims=128,
             chkpt_dir='tmp'):
         super(CriticCNN, self).__init__(alpha)
 
@@ -203,7 +205,7 @@ class PositionalEncoding(nn.Module):
         x = x + self.pe[:x.size(0)]
         return self.dropout(x)
 class ActorT(AIModel):
-    def __init__(self, n_actions, input_dims, alpha,fc1_dims=256, fc2_dims=256, num_heads=8, chkpt_dir='tmp'):
+    def __init__(self, n_actions, input_dims, alpha,fc1_dims=128, fc2_dims=128, num_heads=4, chkpt_dir='tmp'):
         super(ActorT, self).__init__(alpha)
 
         self.checkpoint_file = os.path.join(chkpt_dir, 'actor_torch_ppo.mdl')
@@ -252,7 +254,7 @@ class ActorT(AIModel):
 
 
 class CriticT(AIModel):
-    def __init__(self, input_dims, alpha, fc1_dims=256, fc2_dims=256, num_heads=8,
+    def __init__(self, input_dims, alpha, fc1_dims=128, fc2_dims=128, num_heads=4,
             chkpt_dir='tmp'):
         super(CriticT, self).__init__(alpha)
         self.critic = nn.Sequential(
@@ -301,13 +303,16 @@ class CriticT(AIModel):
 
 class Agent:
     input_dim = 4
+    max_hold_window = 365
+    current_holds = 0
     def __init__(self, n_actions, HyperParams: HyperParameterConfig) -> None:
-        self.actor = ActorNetwork(n_actions, self.input_dim, 0.0001)
+        self.actor = ActorNetwork(n_actions, self.input_dim, 0.001)
         print(self.actor.device)
         self.device = self.actor.device
-        self.critic = CriticNetwork(self.input_dim, 0.0001)
+        self.critic = CriticNetwork(self.input_dim, 0.001)
         self.memory = MemoryBuffer(100)
         self.config = HyperParams
+        
     
     def choose_action(self, observation):
         observation = torch.tensor(observation, dtype=torch.float).to(self.device)
@@ -316,8 +321,18 @@ class Agent:
         action = dist.sample()
         probs = dist.log_prob(action).to(self.device)
         return action, probs, value
+    def choose_action_inf(self, observation):
+        observation = torch.tensor(observation, dtype=torch.float).to(self.device)
+        dist: Categorical = self.actor(observation)
+        value = self.critic(observation).to(self.device)
+        action = dist.sample()
+        if action == 1:
+            self.current_holds += 1
+            if self.current_holds >= self.max_hold_window:
+                action = torch.tensor([0]).to(self.device) #force a sell
+        probs = dist.log_prob(action).to(self.device)
+        return action, probs, value
     
-    #TODO Impliment PPO Algorithm in Pytorch. Vectorize if possible without referencing my Pokemon project!!!
     def clipped_ppo(self):
         #Run PPO Algorithm
         for _ in range(self.config.num_epochs):

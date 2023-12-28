@@ -1,0 +1,6 @@
+5
+cuda:0
+<models.Agent object at 0x7fbab0806c90>
+Balance: 23.04
+Evaluation
+Balance: 11.08

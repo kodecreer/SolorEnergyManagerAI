@@ -41,7 +41,7 @@ class AIModel(nn.Module):
 
 class ActorNetwork(AIModel):
     def __init__(self, n_actions, input_dims, alpha,
-            fc1_dims=128, fc2_dims=128, chkpt_dir='tmp'):
+            fc1_dims=420, fc2_dims=420, chkpt_dir='tmp'):
         super(ActorNetwork, self).__init__(alpha)
 
         self.checkpoint_file = os.path.join(chkpt_dir, 'actor_torch_ppo.mdl')
@@ -53,6 +53,7 @@ class ActorNetwork(AIModel):
                 nn.Linear(fc2_dims, fc2_dims),
                 nn.ReLU(),
                 nn.Linear(fc2_dims, n_actions),
+                nn.Dropout(0.5),
                 nn.Softmax(dim=-1)
         )
         self.init()
@@ -66,7 +67,7 @@ class ActorNetwork(AIModel):
 
 
 class CriticNetwork(AIModel):
-    def __init__(self, input_dims, alpha, fc1_dims=128, fc2_dims=128,
+    def __init__(self, input_dims, alpha, fc1_dims=512, fc2_dims=512,
             chkpt_dir='tmp'):
         super(CriticNetwork, self).__init__(alpha)
 
@@ -76,6 +77,9 @@ class CriticNetwork(AIModel):
                 nn.ReLU(),
                 nn.Linear(fc1_dims, fc2_dims),
                 nn.ReLU(),
+                nn.Linear(fc2_dims, fc2_dims),
+                nn.ReLU(),
+                nn.Dropout(0.5),
                 nn.Linear(fc2_dims, 1)
         )
         self.init()
@@ -205,18 +209,17 @@ class PositionalEncoding(nn.Module):
         x = x + self.pe[:x.size(0)]
         return self.dropout(x)
 class ActorT(AIModel):
-    def __init__(self, n_actions, input_dims, alpha,fc1_dims=128, fc2_dims=128, num_heads=4, chkpt_dir='tmp'):
+    def __init__(self, n_actions, input_dims, alpha,fc1_dims=256, fc2_dims=256, num_heads=8, chkpt_dir='tmp'):
         super(ActorT, self).__init__(alpha)
 
         self.checkpoint_file = os.path.join(chkpt_dir, 'actor_torch_ppo.mdl')
         self.actor = nn.Sequential(
             nn.Linear(fc2_dims, fc1_dims),
             nn.ReLU(),
-            nn.Dropout(0.2),
+            nn.Dropout(0.4),
             nn.Linear(fc1_dims, fc2_dims),
             nn.ReLU(),
-            nn.Dropout(0.2),
-            nn.Linear(fc2_dims, fc2_dims)
+            nn.Dropout(0.4),
         ) #Feed forward
         self.pos_shape = nn.Linear(input_dims, input_dims*20)
         self.reform = nn.Linear(input_dims*20, fc2_dims)
@@ -254,13 +257,13 @@ class ActorT(AIModel):
 
 
 class CriticT(AIModel):
-    def __init__(self, input_dims, alpha, fc1_dims=128, fc2_dims=128, num_heads=4,
+    def __init__(self, input_dims, alpha, fc1_dims=256, fc2_dims=256, num_heads=8,
             chkpt_dir='tmp'):
         super(CriticT, self).__init__(alpha)
         self.critic = nn.Sequential(
             nn.Linear(fc2_dims, fc1_dims),
             nn.ReLU(),
-            nn.Dropout(0.2),
+            nn.Dropout(0.5),
             nn.Linear(fc1_dims, fc2_dims),
            
         ) #Feed forward
@@ -303,7 +306,7 @@ class CriticT(AIModel):
 
 class Agent:
     input_dim = 4
-    max_hold_window = 365
+    max_hold_window = 35
     current_holds = 0
     def __init__(self, n_actions, HyperParams: HyperParameterConfig) -> None:
         self.actor = ActorNetwork(n_actions, self.input_dim, 0.001)
@@ -326,10 +329,11 @@ class Agent:
         dist: Categorical = self.actor(observation)
         value = self.critic(observation).to(self.device)
         action = dist.sample()
-        if action == 1:
+        if action == 0:
             self.current_holds += 1
             if self.current_holds >= self.max_hold_window:
-                action = torch.tensor([0]).to(self.device) #force a sell
+                action = torch.tensor([1]).to(self.device) #force a sell
+                self.current_holds = 0
         probs = dist.log_prob(action).to(self.device)
         return action, probs, value
     
@@ -371,7 +375,7 @@ class Agent:
                 critic_loss = (gains - critic_value)**2
                 critic_loss = critic_loss.mean()
 
-                total_loss = critic_loss - actor_loss *0.5 #Add a weight 
+                total_loss = critic_loss - actor_loss *0.7 #Add a weight 
                 self.actor.optimizer.zero_grad()
                 self.critic.optimizer.zero_grad()
                 total_loss.backward()
@@ -428,7 +432,7 @@ class Agent:
             critic_loss = (gains - critic_value)**2
             critic_loss = critic_loss.mean()
 
-            total_loss = critic_loss - actor_loss *0.5 #Add a weight 
+            total_loss = critic_loss - actor_loss *0.7 #Add a weight 
             self.actor.optimizer.zero_grad()
             self.critic.optimizer.zero_grad()
 

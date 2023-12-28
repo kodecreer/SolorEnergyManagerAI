@@ -27,7 +27,7 @@ if __name__ == '__main__':
     observation = envs.reset()
 
     # Define the number of episodes (or time steps) you want to run the environment
-    num_episodes = 100
+    num_episodes = 30
     #How often to update the graph.
     #The lower the number, the slower it goes through all the adata
     log_interval = 1000
@@ -40,30 +40,31 @@ if __name__ == '__main__':
     agent = None
     sell_only = False
     random_only = False
+    nactions = 2
     print(arg_val)
     if arg_val == 1:
-        agent = Agent(2, params)
+        agent = Agent(nactions, params)
     elif arg_val == 2:
-        agent = AgentRNN(2, params)
+        agent = AgentRNN(nactions, params)
     elif arg_val == 3:
-        agent = AgentT(2, params)
+        agent = AgentT(nactions, params)
     elif arg_val == 4:
-        agent = AgentCNN(2, params)
+        agent = AgentCNN(nactions, params)
     elif arg_val == 5:
-        agent = Agent(2, params)
+        agent = Agent(nactions, params)
         sell_only = True
         num_episodes = 1
     elif arg_val == 6:
-        agent = Agent(2, params)
+        agent = Agent(nactions, params)
         random_only = True
     print(agent)
-    batch_size = 128  #Transformer is VRAM hungry...
+    batch_size = 64  #Transformer is VRAM hungry...
     agent.memory.batch_size = batch_size
     #Per episode
     graphy = []
-    test_size = int(365* 0.2)
+    test_size = int(365* 0.1)
     random.seed(40) #For consistency
-    test_inds = random.sample(range(0, 365), test_size)
+    test_inds = range(365-test_size, 365)#random.sample(range(0, 365), test_size)
     #Per timestep
     testx = []
     test_tmp = []
@@ -85,23 +86,26 @@ if __name__ == '__main__':
         while sum(done) < envs_running:
             
             if step in test_inds:
-                actions = [1 for x in range(envs_running)]
+                actions = [0 for x in range(envs_running)]
                 next_observation, reward, done,truncated,  _ = envs.step(actions)
          
             else:
                 if sell_only:
-                    actions = [2 for x in  range(envs_running)]
+                    actions = [1 for x in  range(envs_running)]
                     next_observation, reward, done,truncated,  _ = envs.step(actions)
 
                     train_val = sum(reward)/envs_running
                     balance += sum(reward)
                 elif random_only:
-                    actions = [random.randint(1,2) for x in  range(envs_running)]
+                    actions = [random.randint(0,1) for x in  range(envs_running)]
                     next_observation, reward, done,truncated,  _ = envs.step(actions)
 
                     train_val = sum(reward)/envs_running
                     balance += sum(reward)
                 else:
+                    # chance = random.randint(1,10)
+                    # if chance == 1:
+                    #     action = 0
                     actions, probs, value = agent.choose_action(observation)
                 
                     next_observation, reward, done,truncated,  _ = envs.step(actions)
@@ -110,7 +114,8 @@ if __name__ == '__main__':
                     balance += sum(reward)
                 
                     for obs, action, prob, val, rew, don in zip(observation, actions, probs, value, reward, done):
-                            agent.memory.push( obs, action, prob, val, rew, don)
+                            # if chance != 1:
+                                agent.memory.push( obs, action, prob, val, rew, don)
                     if agent.memory.size() >= agent.memory.batch_size:
                         #If we have a large enough data then start learning
                         agent.vectorized_clipped_ppo()
@@ -123,9 +128,11 @@ if __name__ == '__main__':
             step += 1
 
         if isinstance(agent, AgentRNN) or isinstance(agent, ActorCNN)or isinstance(agent, AgentT):
+            
             agent.reset() #Clear the hidden states
     if not random_only and not sell_only:
-        agent.vectorized_clipped_ppo()
+        if len(agent.memory.actions) > 0:
+            agent.vectorized_clipped_ppo()
     print("Evaluation")
     with torch.no_grad():
         
@@ -139,16 +146,16 @@ if __name__ == '__main__':
                     #Perform calculations without gradients
                     
                     if sell_only:
-                        actions = [2 for x in  range(envs_running)]
+                        actions = [1 for x in  range(envs_running)]
                     elif random_only:
-                        actions = [random.randint(1,2) for x in  range(envs_running)]
+                        actions = [random.randint(0,3) for x in  range(envs_running)]
                     else:
                         actions, probs, value = agent.choose_action_inf(observation)
                     next_observation, reward, done,truncated,  _ = envs.step(actions)
                     eval_val = sum(reward) / envs_running
                     test_tmp.append(eval_val)
                 else:
-                    actions = [1 for x in range(envs_running)]
+                    actions = [0 for x in range(envs_running)]
                     next_observation, reward, done,truncated,  _ = envs.step(actions)
                 observation = next_observation
                 step += 1

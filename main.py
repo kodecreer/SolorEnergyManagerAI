@@ -16,11 +16,12 @@ import env
 from env import SolarEnv
 from models import *
 import sys
+from supervised_models import MOE_Agent
 if __name__ == '__main__':
     torch.set_default_device('cuda')
     envs_running = 1 #amount of envs running for data collection
     envs = gym.vector.SyncVectorEnv(
-        [lambda: gym.make("SolarEnv-v0") for _ in range(envs_running)]
+        [lambda: gym.make("SolarEnv-v1") for _ in range(envs_running)]
     )
 
     # Reset the environment to its initial state and receive the initial observation
@@ -40,29 +41,30 @@ if __name__ == '__main__':
     agent = None
     sell_only = False
     random_only = False
+    moe_agent = False
     nactions = 2
+    
     print(arg_val)
     if arg_val == 1:
         agent = Agent(nactions, params)
     elif arg_val == 2:
-        agent = AgentRNN(nactions, params)
-    elif arg_val == 3:
-        agent = AgentT(nactions, params)
-    elif arg_val == 4:
-        agent = AgentCNN(nactions, params)
-    elif arg_val == 5:
         agent = Agent(nactions, params)
         sell_only = True
         num_episodes = 1
-    elif arg_val == 6:
+    elif arg_val == 3:
         agent = Agent(nactions, params)
         random_only = True
+        num_episodes = 5
+    elif arg_val == 4:
+        moe_agent = True
+        agent = MOE_Agent('./shse.mdl', window=4)
     print(agent)
-    batch_size = 64  #Transformer is VRAM hungry...
-    agent.memory.batch_size = batch_size
+    if arg_val == 1:
+        batch_size = 64  #Transformer is VRAM hungry...
+        agent.memory.batch_size = batch_size
     #Per episode
     graphy = []
-    test_size = int(365* 0.1)
+    test_size = int(365* 0.3)
     random.seed(40) #For consistency
     test_inds = range(365-test_size, 365)#random.sample(range(0, 365), test_size)
     #Per timestep
@@ -83,6 +85,8 @@ if __name__ == '__main__':
         train_val = 0
         balance = 0
         balences = []
+        if moe_agent:
+            sell_time_out = agent.window
         while sum(done) < envs_running:
             
             if step in test_inds:
@@ -102,6 +106,26 @@ if __name__ == '__main__':
 
                     train_val = sum(reward)/envs_running
                     balance += sum(reward)
+                elif moe_agent:
+                    with torch.no_grad():
+                        if sell_time_out <= 0:
+                            action = 1
+                            sell_time_out = agent.window+1
+                        else: 
+                            if sell_time_out > agent.window:
+                                
+                                date = torch.tensor([observation[0][0]]).unsqueeze(0).float()
+                                day_to_sell = agent.choose_action(date)
+                                sell_time_out = day_to_sell
+                            if sell_time_out <= 0:
+                                action = 1 #sell
+                                sell_time_out = agent.window + 1
+                            else:
+                                action = 0
+                                sell_time_out -= 1
+                    next_observation, reward, done, truncated, _ = envs.step([action])
+  
+                    
                 else:
                     # chance = random.randint(1,10)
                     # if chance == 1:
@@ -119,7 +143,7 @@ if __name__ == '__main__':
                     if agent.memory.size() >= agent.memory.batch_size:
                         #If we have a large enough data then start learning
                         agent.vectorized_clipped_ppo()
-                   
+    
             loop.set_description(f"Reward Average: {train_val} Eval: {eval_val}") 
             balences.append(balance)
             balence = 0
@@ -127,10 +151,7 @@ if __name__ == '__main__':
             observation = next_observation
             step += 1
 
-        if isinstance(agent, AgentRNN) or isinstance(agent, ActorCNN)or isinstance(agent, AgentT):
-            
-            agent.reset() #Clear the hidden states
-    if not random_only and not sell_only:
+    if not random_only and not sell_only and not moe_agent:
         if len(agent.memory.actions) > 0:
             agent.vectorized_clipped_ppo()
     print("Evaluation")
@@ -149,8 +170,24 @@ if __name__ == '__main__':
                         actions = [1 for x in  range(envs_running)]
                     elif random_only:
                         actions = [random.randint(0,3) for x in  range(envs_running)]
+                    elif moe_agent:
+                        if sell_time_out <= 0:
+                            actions = 1
+                            sell_time_out = agent.window+1
+                        else: 
+                            if sell_time_out > agent.window:
+                                date = torch.tensor([observation[0][0]]).unsqueeze(0).float()
+                                day_to_sell = agent.choose_action(date)
+                                sell_time_out = day_to_sell
+                            if sell_time_out <= 0:
+                                actions = 1 #sell
+                                sell_time_out = agent.window
+                            else:
+                                actions = 0
+                                sell_time_out -= 1
+                        actions = [actions]
                     else:
-                        actions, probs, value = agent.choose_action_inf(observation)
+                        actions, probs, value = agent.choose_action(observation)
                     next_observation, reward, done,truncated,  _ = envs.step(actions)
                     eval_val = sum(reward) / envs_running
                     test_tmp.append(eval_val)
@@ -163,8 +200,7 @@ if __name__ == '__main__':
             graphy.append(sum(test_tmp))
             testy.extend(test_tmp.copy())
             test_tmp.clear()
-            if isinstance(agent, AgentRNN) or isinstance(agent, ActorCNN) or isinstance(agent, AgentT):
-                agent.reset() #Clear the hidden states
+
     
     with open(f'./metrics/per_episode_{arg_val}.txt', 'w') as f:
         f.writelines(str(graphy))

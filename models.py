@@ -41,7 +41,7 @@ class AIModel(nn.Module):
 
 class ActorNetwork(AIModel):
     def __init__(self, n_actions, input_dims, alpha,
-            fc1_dims=420, fc2_dims=420, chkpt_dir='tmp'):
+            fc1_dims=256, fc2_dims=256, chkpt_dir='tmp'):
         super(ActorNetwork, self).__init__(alpha)
 
         self.checkpoint_file = os.path.join(chkpt_dir, 'actor_torch_ppo.mdl')
@@ -309,10 +309,10 @@ class Agent:
     max_hold_window = 35
     current_holds = 0
     def __init__(self, n_actions, HyperParams: HyperParameterConfig) -> None:
-        self.actor = ActorNetwork(n_actions, self.input_dim, 0.001)
+        self.actor = ActorNetwork(n_actions, self.input_dim, 0.0004)
         print(self.actor.device)
         self.device = self.actor.device
-        self.critic = CriticNetwork(self.input_dim, 0.001)
+        self.critic = CriticNetwork(self.input_dim, 0.0004)
         self.memory = MemoryBuffer(100)
         self.config = HyperParams
         

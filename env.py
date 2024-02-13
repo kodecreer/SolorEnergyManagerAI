@@ -364,4 +364,4 @@ class SolarEnv4Step(gym.Env):
         # self.fig.canvas.draw()
         # plt.pause(1e-40)
         
-gym.register(id='SolarEnv-v0', entry_point=SolarEnv)
+gym.register(id='SolarEnv-v1', entry_point=SolarEnv)

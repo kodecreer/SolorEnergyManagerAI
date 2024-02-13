@@ -6,6 +6,7 @@ from torch.distributions import Categorical
 import numpy as np
 import torch.nn.functional as F
 import math
+from supervised_models import MOE
 class HyperParameterConfig():
     num_epochs = 10
     num_steps = 2048
@@ -41,7 +42,7 @@ class AIModel(nn.Module):
 
 class ActorNetwork(AIModel):
     def __init__(self, n_actions, input_dims, alpha,
-            fc1_dims=256, fc2_dims=256, chkpt_dir='tmp'):
+            fc1_dims=32, fc2_dims=32, chkpt_dir='tmp'):
         super(ActorNetwork, self).__init__(alpha)
 
         self.checkpoint_file = os.path.join(chkpt_dir, 'actor_torch_ppo.mdl')
@@ -53,13 +54,15 @@ class ActorNetwork(AIModel):
                 nn.Linear(fc2_dims, fc2_dims),
                 nn.ReLU(),
                 nn.Linear(fc2_dims, n_actions),
-                nn.Dropout(0.5),
+                nn.Dropout(0.1),
                 nn.Softmax(dim=-1)
         )
+        # self.actor = MOE(input_dims, n_actions)
         self.init()
 
     def forward(self, state):
         dist = self.actor(state)
+
         dist = Categorical(dist)
         
         return dist
@@ -306,7 +309,7 @@ class CriticT(AIModel):
 
 class Agent:
     input_dim = 4
-    max_hold_window = 35
+    max_hold_window = int(365*0.3) 
     current_holds = 0
     def __init__(self, n_actions, HyperParams: HyperParameterConfig) -> None:
         self.actor = ActorNetwork(n_actions, self.input_dim, 0.0004)

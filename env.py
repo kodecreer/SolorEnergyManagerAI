@@ -69,7 +69,10 @@ class SolarEnv(gym.Env):
         self.last_reward = 0
   
     def calc_reward(self, aux=1):
-        reward = (self.wattage_balance + self.power_day) * self.wattage_rate + max(0, self.last_reward)
+        reward = (self.wattage_balance + self.power_day) * self.wattage_rate 
+        self.balance += reward
+        reward +=  max(0, self.last_reward)
+        reward += self.balance
         return reward
         
     def get_wattage(self, vmp, imp):
@@ -84,9 +87,9 @@ class SolarEnv(gym.Env):
         else:
             #sell
             reward = self.calc_reward()
-            self.balance += reward - self.last_reward
+            self.last_reward = reward
             #reward *= 100 
-            reward = self.balance
+            # reward = self.balance
             self.wattage_balance = 0
             self.recent_holds = 0
         self.power_day = 0
@@ -117,8 +120,8 @@ class SolarEnv(gym.Env):
                 self.power_day += kilo_watts
                 self.current_step += 1
                 
-            if last_price < self.wattage_rate and action == 1:
-                reward -= 10
+            # if last_price < self.wattage_rate and action == 1:
+            #     reward -= 10
             #Day of the year, price, wattage stored, power generated in the day self.current_step//48,
             observation = np.array([ self.wattage_rate, self.wattage_balance, self.power_day, reward])
         else:
@@ -126,7 +129,7 @@ class SolarEnv(gym.Env):
             observation = np.array([ 0, 0, 0, reward])
             if action == 1:
                 reward = -100 #Discourage holding till the end
-        self.last_reward = reward
+        
         return observation,reward,  done, truncated, {}
 
     def reset(self, seed=None, options=None):

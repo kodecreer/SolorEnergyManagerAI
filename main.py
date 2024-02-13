@@ -28,7 +28,7 @@ if __name__ == '__main__':
     observation = envs.reset()
 
     # Define the number of episodes (or time steps) you want to run the environment
-    num_episodes = 30
+    num_episodes = 1000
     #How often to update the graph.
     #The lower the number, the slower it goes through all the adata
     log_interval = 1000
@@ -43,6 +43,7 @@ if __name__ == '__main__':
     random_only = False
     moe_agent = False
     nactions = 2
+    is_sparse = True
     
     print(arg_val)
     if arg_val == 1:
@@ -138,7 +139,7 @@ if __name__ == '__main__':
                     balance += sum(reward)
                 
                     for obs, action, prob, val, rew, don in zip(observation, actions, probs, value, reward, done):
-                            # if chance != 1:
+                            if is_sparse and action == 1 or not is_sparse:
                                 agent.memory.push( obs, action, prob, val, rew, don)
                     if agent.memory.size() >= agent.memory.batch_size:
                         #If we have a large enough data then start learning
@@ -157,7 +158,7 @@ if __name__ == '__main__':
     print("Evaluation")
     with torch.no_grad():
         
-        loop = tqdm(range(num_episodes))
+        loop = tqdm(range(30))
         for episode in loop:
             observation, _ = envs.reset()
             done = [False]
@@ -187,7 +188,7 @@ if __name__ == '__main__':
                                 sell_time_out -= 1
                         actions = [actions]
                     else:
-                        actions, probs, value = agent.choose_action(observation)
+                        actions, probs, value = agent.choose_action_inf(observation)
                     next_observation, reward, done,truncated,  _ = envs.step(actions)
                     eval_val = sum(reward) / envs_running
                     test_tmp.append(eval_val)
